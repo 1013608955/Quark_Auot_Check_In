@@ -2,28 +2,31 @@ import os
 import re
 import sys
 import requests
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, parse_qs
+from urllib.parse import unquote
 
-# ===================== 配置项说明 =====================
-# 1. 环境变量 COOKIE_QUARK：夸克Cookie，多账号用 && 或 \n 分隔
-#    格式示例：kps=xxx;sign=xxx;vcode=xxx&&kps=yyy;sign=yyy;vcode=yyy
-# 2. 环境变量 WPUSH_KEY：WPush的推送Token（从wpush.cn获取）
+# ===================== 配置说明 =====================
+# GitHub仓库变量配置：
+# 1. COOKIE_QUARK：填完整的夸克接口URL，多账号用 && 或 \n 分隔
+# 2. WPUSH_KEY：填wpush.cn获取的推送Token
 # =====================================================
 
 def send_wpush(title, content):
     """
-    WPush推送实现
+    WPush推送实现（适配GitHub Action环境）
     :param title: 推送标题
     :param content: 推送内容
     """
     # 获取WPush Token
     wpush_key = os.getenv("WPUSH_KEY")
     if not wpush_key:
-        print("❌ 未配置WPUSH_KEY环境变量，跳过推送")
+        print("❌ 未配置WPUSH_KEY仓库变量，跳过推送")
         return
     
-    # WPush推送接口
-    url = f"https://wpush.cn/send?token={wpush_key}&title={quote(title)}&content={quote(content)}"
+    # WPush推送接口（处理中文编码）
+    title_encoded = quote(title, encoding='utf-8')
+    content_encoded = quote(content, encoding='utf-8')
+    url = f"https://wpush.cn/send?token={wpush_key}&title={title_encoded}&content={content_encoded}"
     
     try:
         response = requests.get(url, timeout=10)
@@ -35,27 +38,78 @@ def send_wpush(title, content):
     except Exception as e:
         print(f"❌ WPush推送异常: {str(e)}")
 
+def parse_cookie_from_url(url_str):
+    """
+    从完整URL中自动解析kps、sign、vcode参数
+    :param url_str: 完整的夸克接口URL
+    :return: 解析后的参数字符串（kps=xxx;sign=xxx;vcode=xxx）
+    """
+    try:
+        # 清理URL中的多余空格
+        url_str = url_str.strip()
+        # 解析URL
+        parsed_url = urlparse(url_str)
+        # 提取URL参数
+        query_params = parse_qs(parsed_url.query)
+        
+        # 提取关键参数（处理列表值，取第一个）
+        kps = query_params.get('kps', [''])[0]
+        sign = query_params.get('sign', [''])[0]
+        vcode = query_params.get('vcode', [''])[0]
+        
+        # 解码URL编码的参数
+        kps = unquote(kps) if kps else ''
+        sign = unquote(sign) if sign else ''
+        vcode = unquote(vcode) if vcode else ''
+        
+        # 检查参数完整性
+        if not all([kps, sign, vcode]):
+            raise ValueError("URL中缺失kps/sign/vcode关键参数")
+        
+        # 拼接成标准格式
+        return f"kps={kps};sign={sign};vcode={vcode}"
+    except Exception as e:
+        print(f"❌ URL解析失败: {str(e)} | URL: {url_str[:50]}...")
+        return ""
+
 def get_env():
     """
-    获取并解析环境变量中的夸克Cookie
-    :return: 解析后的Cookie列表（每个元素是单个账号的Cookie字符串）
+    获取并解析环境变量中的夸克Cookie/URL（自动适配两种格式）
+    :return: 解析后的有效账号参数列表
     """
     # 检查COOKIE_QUARK是否存在
     if "COOKIE_QUARK" not in os.environ:
-        err_msg = "❌ 未添加COOKIE_QUARK环境变量"
+        err_msg = "❌ 未添加COOKIE_QUARK仓库变量"
         print(err_msg)
         send_wpush("夸克自动签到", err_msg)
         sys.exit(0)
     
-    # 读取并分割多账号Cookie（支持 \n 或 && 分隔）
+    # 读取原始变量
     cookie_raw = os.environ.get("COOKIE_QUARK")
-    cookie_list = re.split(r'\n|&&', cookie_raw)
+    # 分割多账号（支持 \n 或 && 分隔）
+    raw_list = re.split(r'\n|&&', cookie_raw)
+    cookie_list = []
     
-    # 过滤空值和无效项
-    cookie_list = [cookie.strip() for cookie in cookie_list if cookie.strip()]
+    # 逐个解析每个账号
+    for item in raw_list:
+        item = item.strip()
+        if not item:
+            continue
+        
+        # 判断是URL还是直接的参数字符串
+        if item.startswith("http"):
+            # 从URL解析参数
+            parsed_cookie = parse_cookie_from_url(item)
+            if parsed_cookie:
+                cookie_list.append(parsed_cookie)
+        else:
+            # 已是参数字符串，直接使用（过滤无效项）
+            if all(key in item for key in ["kps=", "sign=", "vcode="]):
+                cookie_list.append(item.strip())
     
+    # 检查解析结果
     if not cookie_list:
-        err_msg = "❌ COOKIE_QUARK格式错误，无有效账号"
+        err_msg = "❌ COOKIE_QUARK解析后无有效账号，请检查URL格式"
         print(err_msg)
         send_wpush("夸克自动签到", err_msg)
         sys.exit(0)
@@ -104,7 +158,7 @@ class Quark:
 
     def _request(self, method, url, params=None, json=None):
         """
-        统一请求封装，处理通用异常
+        统一请求封装，处理通用异常（适配GitHub网络环境）
         :param method: 请求方法（get/post）
         :param url: 请求地址
         :param params: URL参数
@@ -113,14 +167,20 @@ class Quark:
         """
         headers = {
             "User-Agent": "Mozilla/5.0 (Linux; Android 13; SM-G9980 Build/TP1A.220624.014; wv) AppleWebKit/537.36",
-            "Accept": "application/json, text/plain, */*"
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://drive-m.quark.cn/",
+            "Connection": "keep-alive"
         }
         
         try:
+            # 增加超时和重试机制
+            session = requests.Session()
+            session.mount('https://', requests.adapters.HTTPAdapter(max_retries=3))
+            
             if method.lower() == "get":
-                resp = requests.get(url, params=params, headers=headers, timeout=15)
+                resp = session.get(url, params=params, headers=headers, timeout=20)
             elif method.lower() == "post":
-                resp = requests.post(url, params=params, json=json, headers=headers, timeout=15)
+                resp = session.post(url, params=params, json=json, headers=headers, timeout=20)
             else:
                 raise ValueError(f"不支持的请求方法: {method}")
             
@@ -185,7 +245,7 @@ class Quark:
         # 1. 获取基础信息
         growth_info = self.get_growth_info()
         if not growth_info:
-            log.append("❌ 获取签到基础信息失败")
+            log.append("❌ 获取签到基础信息失败（Cookie可能已失效）")
             return "\n".join(log)
         
         # 2. 解析基础信息
@@ -220,11 +280,11 @@ class Quark:
         return "\n".join(log)
 
 def main():
-    """主执行函数"""
+    """主执行函数（适配GitHub Action环境）"""
     print("---------- 夸克网盘自动签到开始 ----------")
     final_msg = ["夸克网盘签到结果汇总:"]
     
-    # 1. 获取并解析Cookie
+    # 1. 获取并解析Cookie/URL
     cookie_list = get_env()
     final_msg.append(f"📊 检测到有效账号数: {len(cookie_list)}")
     
@@ -259,6 +319,8 @@ def main():
     return final_content
 
 if __name__ == "__main__":
+    # GitHub Action环境兼容
+    os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
     try:
         main()
     except Exception as e:
