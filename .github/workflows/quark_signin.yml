@@ -72,20 +72,21 @@ jobs:
         run: pip install requests
 
       - name: 执行签到脚本
+        id: sign_script  # 命名步骤，用于读取输出
         env:
           COOKIE_QUARK: ${{ secrets.COOKIE_QUARK }}
-          WPUSH_KEY: ${{ secrets.WPUSH_KEY }}  # 新增这一行，传递WPUSH_KEY
+          WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
         run: python checkIn_Quark.py
 
       - name: 标记今天签到成功
-        if: success()
+        if: steps.sign_script.outputs.overall_success == 'true'  # 仅实际签到成功时执行
         run: |
           date_str=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
           echo "$date_str" > .last_success_date
           echo "已记录成功签到日期: $date_str"
 
       - name: 保存成功记录到缓存
-        if: success()
+        if: steps.sign_script.outputs.overall_success == 'true'  # 仅实际签到成功时保存
         uses: actions/cache@v4
         with:
           path: .last_success_date
