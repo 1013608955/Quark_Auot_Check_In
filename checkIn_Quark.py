@@ -45,7 +45,7 @@ def send_wpush(title, content):
     }
     # 请求头（必须设置为JSON类型）
     headers = {
-        "Content-Type": "application/json"，  # 此处是全角逗号
+        "Content-Type": "application/json",  # 此处改为半角逗号
         "User-Agent": "QuarkSign/1.0"
     }
     
