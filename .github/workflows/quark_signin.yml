@@ -74,6 +74,7 @@ jobs:
       - name: 执行签到脚本
         env:
           COOKIE_QUARK: ${{ secrets.COOKIE_QUARK }}
+          WPUSH_KEY: ${{ secrets.WPUSH_KEY }}  # 新增这一行，传递WPUSH_KEY
         run: python checkIn_Quark.py
 
       - name: 标记今天签到成功
