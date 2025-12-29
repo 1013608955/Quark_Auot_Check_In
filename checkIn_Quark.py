@@ -50,7 +50,7 @@ def parse_cookie_from_url(url_str):
         kps = unquote(kps) if kps else ''
         sign = unquote(sign) if sign else ''
         vcode = unquote(vcode) if vcode else ''
-        
+        print(f"✅ 解析后的参数: kps={kps[:20]}... | sign={sign[:20]}... | vcode={vcode}")  # 只打印前20位，避免泄露
         if not all([kps, sign, vcode]):
             raise ValueError("URL中缺失kps/sign/vcode关键参数")
         
