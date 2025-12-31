@@ -1,6 +1,3 @@
-# 夸克网盘自动签到脚本（完整参数日志版）
-# 修改说明：调整 parse_cookie_from_url 函数中的日志输出逻辑，去除参数截断（原 kps[:20]... 等切片处理），确保日志中完整打印解析后的 kps、sign、vcode 参数，便于调试核对。
-
 import os
 import re
 import sys
@@ -87,9 +84,9 @@ def parse_cookie_from_url(url_str):
         sign = query_params.get('sign', [''])[0]
         vcode = query_params.get('vcode', [''])[0]
         
-        # 关键修复：解码后还原kps中的+号（URL编码中+会被解析为空格）
+        # 关键修复：解码后还原kps/sign中的+号（URL编码中+会被解析为空格）
         kps = unquote(kps).replace(" ", "+") if kps else ''
-        sign = unquote(sign).replace(" ", "+") if sign else ''  # sign也可能有同样问题，一并处理
+        sign = unquote(sign).replace(" ", "+") if sign else ''
         vcode = unquote(vcode) if vcode else ''
         
         # 完整输出解析后的参数
@@ -102,7 +99,7 @@ def parse_cookie_from_url(url_str):
     except Exception as e:
         print(f"❌ URL解析失败: {str(e)} | URL: {url_str[:80]}...")
         return ""
-        
+
 def get_env():
     """获取并解析环境变量中的夸克参数"""
     if "COOKIE_QUARK" not in os.environ:
@@ -225,7 +222,7 @@ class Quark:
         """字节单位转换"""
         try:
             b = float(b)
-            if b< 0:
+            if b < 0:
                 return "0.00 B"
         except (ValueError, TypeError):
             return "0.00 B"
@@ -420,8 +417,12 @@ def main():
         final_content
     )
     
-    # 关键：输出签到成功状态给GitHub Workflow
-    print(f"::set-output name=overall_success::{str(overall_success).lower()}")
+    # 修复：替换过时的set-output为环境文件输出
+    github_output = os.getenv('GITHUB_OUTPUT')
+    if github_output:
+        with open(github_output, 'a', encoding='utf-8') as f:
+            f.write(f"overall_success={str(overall_success).lower()}\n")
+    print(f"📤 签到状态输出: overall_success={str(overall_success).lower()}")
     
     print("\n" + "="*50)
     print("---------- 夸克网盘自动签到结束 ----------")
@@ -438,6 +439,10 @@ if __name__ == "__main__":
         error_msg = f"❌ 脚本执行异常: {str(e)}"
         print(error_msg)
         send_wpush("夸克签到脚本异常", error_msg)
-        # 异常时标记为签到失败
-        print(f"::set-output name=overall_success::false")
+        # 修复：异常时输出状态到环境文件
+        github_output = os.getenv('GITHUB_OUTPUT')
+        if github_output:
+            with open(github_output, 'a', encoding='utf-8') as f:
+                f.write("overall_success=false\n")
+        print("📤 签到状态输出: overall_success=false")
         sys.exit(1)
