@@ -1,3 +1,7 @@
+夸克网盘自动签到脚本（完整参数日志版）
+
+修改说明：调整 parse_cookie_from_url 函数中的日志输出逻辑，去除参数截断（原 kps[:20]... 等切片处理），确保日志中完整打印解析后的 kps、sign、vcode 参数，便于调试核对。
+
 import os
 import re
 import sys
@@ -88,7 +92,8 @@ def parse_cookie_from_url(url_str):
         sign = unquote(sign) if sign else ''
         vcode = unquote(vcode) if vcode else ''
         
-        print(f"✅ 解析后的参数: kps={kps[:20]}... | sign={sign[:20]}... | vcode={vcode}")
+        # 修改点：去除参数截断，完整输出解析后的参数
+        print(f"✅ 解析后的参数: kps={kps} | sign={sign} | vcode={vcode}")
         
         if not all([kps, sign, vcode]):
             raise ValueError(f"URL中缺失关键参数 | kps={bool(kps)} | sign={bool(sign)} | vcode={bool(vcode)}")
@@ -220,7 +225,7 @@ class Quark:
         """字节单位转换"""
         try:
             b = float(b)
-            if b < 0:
+            if b< 0:
                 return "0.00 B"
         except (ValueError, TypeError):
             return "0.00 B"
@@ -436,3 +441,5 @@ if __name__ == "__main__":
         # 异常时标记为签到失败
         print(f"::set-output name=overall_success::false")
         sys.exit(1)
+
+核心修改位置：parse_cookie_from_url 函数中，原代码为 print(f"✅ 解析后的参数: kps={kps[:20]}... | sign={sign[:20]}... | vcode={vcode}")，修改后为 print(f"✅ 解析后的参数: kps={kps} | sign={sign} | vcode={vcode}")，删除了 kps 和 sign 的切片截断，确保参数完整输出。
