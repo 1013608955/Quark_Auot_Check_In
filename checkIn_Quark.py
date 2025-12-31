@@ -87,11 +87,12 @@ def parse_cookie_from_url(url_str):
         sign = query_params.get('sign', [''])[0]
         vcode = query_params.get('vcode', [''])[0]
         
-        kps = unquote(kps) if kps else ''
-        sign = unquote(sign) if sign else ''
+        # 关键修复：解码后还原kps中的+号（URL编码中+会被解析为空格）
+        kps = unquote(kps).replace(" ", "+") if kps else ''
+        sign = unquote(sign).replace(" ", "+") if sign else ''  # sign也可能有同样问题，一并处理
         vcode = unquote(vcode) if vcode else ''
         
-        # 修改点：去除参数截断，完整输出解析后的参数
+        # 完整输出解析后的参数
         print(f"✅ 解析后的参数: kps={kps} | sign={sign} | vcode={vcode}")
         
         if not all([kps, sign, vcode]):
@@ -101,7 +102,7 @@ def parse_cookie_from_url(url_str):
     except Exception as e:
         print(f"❌ URL解析失败: {str(e)} | URL: {url_str[:80]}...")
         return ""
-
+        
 def get_env():
     """获取并解析环境变量中的夸克参数"""
     if "COOKIE_QUARK" not in os.environ:
