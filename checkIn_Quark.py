@@ -441,5 +441,3 @@ if __name__ == "__main__":
         # 异常时标记为签到失败
         print(f"::set-output name=overall_success::false")
         sys.exit(1)
-
-核心修改位置：parse_cookie_from_url 函数中，原代码为 print(f"✅ 解析后的参数: kps={kps[:20]}... | sign={sign[:20]}... | vcode={vcode}")，修改后为 print(f"✅ 解析后的参数: kps={kps} | sign={sign} | vcode={vcode}")，删除了 kps 和 sign 的切片截断，确保参数完整输出。
