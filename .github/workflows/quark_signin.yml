@@ -2,8 +2,8 @@ name: Quark签到
 
 on:
   schedule:
-    - cron: '0 1 * * *'   # 北京时间 09:00 (UTC+8 -> UTC+1)
-    - cron: '0 5 * * *'   # 北京时间 13:00 (UTC+8 -> UTC+5)
+    - cron: '0 1 * * *'   # 北京时间 09:00 (UTC+8)
+    - cron: '0 5 * * *'   # 北京时间 13:00 (UTC+8)
   workflow_dispatch:      # 允许手动触发
 
 jobs:
@@ -33,17 +33,20 @@ jobs:
             echo "上次签到日期: $last_date"
             if [ "$last_date" = "$current_date" ]; then
               echo "今天已成功签到，跳过执行。"
-              echo "skip=false" >> "$GITHUB_OUTPUT"
+              # ========== 关键修改1：已签到时 skip=true（跳过） ==========
+              echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
 
           echo "今天尚未签到，继续执行。"
-          echo "skip=true" >> "$GITHUB_OUTPUT"
+          # ========== 关键修改2：未签到时 skip=false（执行） ==========
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
   sign-in:
     needs: check-if-already-signed
-    if: needs.check-if-already-signed.outputs.skip == 'true'
+    # ========== 关键修改3：条件改为 skip == 'false'（未签到才执行） ==========
+    if: needs.check-if-already-signed.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
