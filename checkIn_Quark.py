@@ -20,7 +20,7 @@ QUARK_COOKIE = ""  # 抓包的完整Cookie字符串（可选，填后提升成�
 
 # 缓存文件路径（GitHub Action中使用临时目录）
 CACHE_DIR = os.getenv("RUNNER_TEMP", "/tmp")
-CACHE_FILE = os.path.join(CACHE_DIR, "quark_sign_cache.txt")
+CACHE_FILE = os.path.join(os.getcwd(), ".last_success_date")
 
 def send_wpush(title, content):
     """适配WPush官方v1接口的推送实现"""
