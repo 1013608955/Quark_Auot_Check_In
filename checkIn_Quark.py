@@ -5,7 +5,6 @@ import json
 import requests
 from urllib.parse import quote, urlparse, parse_qs, unquote
 from datetime import datetime
-from pathlib import Path
 import time
 import logging
 
@@ -18,9 +17,6 @@ import logging
 # 自定义配置
 USER_AGENT = "Mozilla/5.0 (Linux; Android 13; SM-G9980 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.130 Mobile Safari/537.36 Quark/10.1.2.973"
 QUARK_COOKIE = ""  # 抓包的完整Cookie字符串（可选，填后提升成功率）
-
-# 文件路径（使用工作目录直接存储，避免缓存问题）
-CACHE_FILE = os.path.join(os.getcwd(), ".last_success_date")
 
 # 配置日志级别
 logging.basicConfig(
@@ -80,7 +76,7 @@ def send_wpush(title, content):
         logger.error(f"❌ WPush推送异常: {str(e)}")
 
 def parse_cookie_from_url(url_str):
-    """从完整URL中解析kps/sign/vcode参数"""
+    """从完整URL中解析kps/sign/vcode参数（已修复空格处理）"""
     try:
         url_str = url_str.strip()
         if not url_str.startswith("http"):
@@ -93,8 +89,9 @@ def parse_cookie_from_url(url_str):
         sign = query_params.get('sign', [''])[0]
         vcode = query_params.get('vcode', [''])[0]
         
-        kps = unquote(kps).replace(" ", "+") if kps else ''
-        sign = unquote(sign).replace(" ", "+") if sign else ''
+        # 仅保留unquote处理，移除错误的replace(" ", "+")
+        kps = unquote(kps) if kps else ''
+        sign = unquote(sign) if sign else ''
         vcode = unquote(vcode) if vcode else ''
         
         logger.info(f"✅ 解析后的参数: kps={kps} | sign={sign} | vcode={vcode}")
@@ -190,7 +187,7 @@ class Quark:
         return f"{b:.2f} {units[i]}"
 
     def _request(self, method, url, params=None, json=None, retries=3):
-        """统一请求封装（补充关键请求头，增加指数退避重试）"""
+        """统一请求封装（已移除verify=False）"""
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "application/json, text/plain, */*",
@@ -213,8 +210,7 @@ class Quark:
                         url, 
                         params=params, 
                         headers=headers, 
-                        timeout=20,
-                        verify=False
+                        timeout=20
                     )
                 elif method.lower() == "post":
                     resp = session.post(
@@ -222,8 +218,7 @@ class Quark:
                         params=params, 
                         json=json, 
                         headers=headers, 
-                        timeout=20,
-                        verify=False
+                        timeout=20
                     )
                 else:
                     raise ValueError(f"不支持的请求方法: {method}")
