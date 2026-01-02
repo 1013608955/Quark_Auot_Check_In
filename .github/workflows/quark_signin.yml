@@ -69,24 +69,26 @@ jobs:
           WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
         run: python checkIn_Quark.py
 
-      - name: 标记今天签到成功（更新仓库变量）
+      - name: 标记今天签到成功（curl直接调用API更新变量）
         if: steps.sign_script.outputs.overall_success == 'true'
-        uses: actions/github-script@v7.0.1  # 固定稳定版本
-        with:
-          script: |
-            // 生成北京时间格式的日期（2026-01-02）
-            const currentDate = new Date().toLocaleDateString('zh-CN', { 
-              timeZone: 'Asia/Shanghai' 
-            }).replace(/\//g, '-');
-            
-            // 正确的API方法：创建/更新仓库变量（原子操作）
-            await github.rest.repos.createOrUpdateRepoVariable({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: 'LAST_SUCCESS_DATE',
-              value: currentDate
-            });
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 生成北京时间格式的日期（2026-01-02）
+          CURRENT_DATE=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
+          # 仓库所有者和仓库名（自动获取）
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          # GitHub Token
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          
+          # 调用GitHub REST API创建/更新变量（最底层，无版本问题）
+          curl -L -X PUT \
+            "https://api.github.com/repos/$OWNER/$REPO/actions/variables/LAST_SUCCESS_DATE" \
+            -H "Authorization: token $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -d "{\"name\":\"LAST_SUCCESS_DATE\",\"value\":\"$CURRENT_DATE\"}"
+          
+          echo "✅ 已成功更新仓库变量 LAST_SUCCESS_DATE = $CURRENT_DATE"
 
       - name: 清理旧的工作流记录
         uses: Mattraks/delete-workflow-runs@main
