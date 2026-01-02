@@ -12,9 +12,6 @@ jobs:
     outputs:
       skip: ${{ steps.check.outputs.skip }}
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v3
-
       - name: 检查是否已签到
         id: check
         run: |
@@ -22,19 +19,18 @@ jobs:
           current_date=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
           echo "当前北京时间: $current_date"
           
-          # 检查本地文件是否存在
-          if [ -f .last_success_date ]; then
-            last_date=$(cat .last_success_date)
-            echo "上次签到日期: $last_date"
-            if [ "$last_date" = "$current_date" ]; then
-              echo "✅ 今天已成功签到，跳过执行。"
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          fi
+          # 从环境变量获取上次签到日期
+          last_date="${{ env.LAST_SUCCESS_DATE }}"
           
-          echo "📅 今天尚未签到，继续执行。"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
+          # 如果环境变量未设置或与当前日期不同
+          if [ -z "$last_date" ] || [ "$last_date" != "$current_date" ]; then
+            echo "📅 今天尚未签到，继续执行。"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "LAST_SUCCESS_DATE=$current_date" >> "$GITHUB_ENV"
+          else
+            echo "✅ 今天已成功签到，跳过执行。"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
 
   sign-in:
     needs: check-if-already-signed
@@ -72,13 +68,6 @@ jobs:
           COOKIE_QUARK: ${{ secrets.COOKIE_QUARK }}
           WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
         run: python checkIn_Quark.py
-
-      - name: 标记今日签到成功（立即更新文件）
-        if: steps.sign_script.outputs.overall_success == 'true'
-        run: |
-          date_str=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
-          echo "$date_str" > .last_success_date
-          echo "✅ 已记录成功签到日期: $date_str"
 
       - name: 清理旧的工作流记录
         uses: Mattraks/delete-workflow-runs@main
