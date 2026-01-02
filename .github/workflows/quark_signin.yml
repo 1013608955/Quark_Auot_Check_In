@@ -17,7 +17,8 @@ jobs:
         with:
           name: quark-sign-date
           path: ./
-          if-no-artifact: warn
+          # 适配v4的参数：不存在时仅警告
+          if-no-artifact-behavior: warn
 
       - name: 判断是否已签到
         id: check
