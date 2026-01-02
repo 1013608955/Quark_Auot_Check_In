@@ -18,7 +18,8 @@ from pathlib import Path
 USER_AGENT = "Mozilla/5.0 (Linux; Android 13; SM-G9980 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.130 Mobile Safari/537.36 Quark/10.1.2.973"
 QUARK_COOKIE = ""  # 抓包的完整Cookie字符串（可选，填后提升成功率）
 
-# 缓存文件路径（与YAML统一，仅存纯日期）
+# 缓存文件路径（GitHub Action中使用临时目录）
+CACHE_DIR = os.getenv("RUNNER_TEMP", "/tmp")
 CACHE_FILE = os.path.join(os.getcwd(), ".last_success_date")
 
 def send_wpush(title, content):
@@ -143,24 +144,6 @@ def get_env():
     
     print(f"✅ 成功解析{len(cookie_list)}个有效账号")
     return cookie_list
-
-def check_global_sign_cache():
-    """检查全局签到缓存（与YAML统一，仅判断日期）"""
-    try:
-        if not os.path.exists(CACHE_FILE):
-            return False
-        
-        with open(CACHE_FILE, "r", encoding="utf-8") as f:
-            last_date = f.read().strip()
-        
-        today = datetime.now().strftime("%Y-%m-%d")
-        if last_date == today:
-            print(f"✅ 全局缓存显示今日({today})已签到，跳过所有账号处理")
-            return True
-        return False
-    except Exception as e:
-        print(f"❌ 读取全局缓存失败: {str(e)} | 缓存文件: {CACHE_FILE}")
-        return False
 
 class Quark:
     """夸克网盘签到类"""
@@ -292,9 +275,8 @@ class Quark:
         return result.get("balance", "0") if result else "查询失败"
 
     def do_sign(self):
-        """执行完整签到流程"""
+        """执行完整签到流程（已移除缓存检查）"""
         log = [f"\n📱 {self.user_name}"]
-        sign_success = False
         
         growth_info = self.get_growth_info()
         if not growth_info:
@@ -314,22 +296,21 @@ class Quark:
             daily_reward = self.convert_bytes(cap_sign.get("sign_daily_reward", 0))
             progress = f"{cap_sign.get('sign_progress', 0)}/{cap_sign.get('sign_target', 0)}"
             log.append(f"✅ 接口验证今日已签到 | 获得: {daily_reward} | 连签进度: {progress}")
-            sign_success = True
+            return "\n".join(log), True
         else:
             sign_result = self.get_growth_sign()
             if sign_result:
                 reward = self.convert_bytes(sign_result.get("sign_daily_reward", 0))
                 progress = f"{cap_sign.get('sign_progress', 0)+1}/{cap_sign.get('sign_target', 0)}"
                 log.append(f"✅ 签到成功 | 获得: {reward} | 连签进度: {progress}")
-                sign_success = True
+                return "\n".join(log), True
             else:
                 log.append(f"❌ 签到失败 | 原因: 接口返回异常（请检查Cookie有效性/重新抓包）")
-                sign_success = False
+                return "\n".join(log), False
         
         balance = self.queryBalance()
         log.append(f"🎁 抽奖余额: {balance}")
-        
-        return "\n".join(log), sign_success
+        return "\n".join(log), True
 
 def main():
     """主执行函数（输出状态给Workflow）"""
@@ -337,22 +318,6 @@ def main():
     print("---------- 夸克网盘自动签到开始 ----------")
     print(f"执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*50)
-    
-    # 第一步：检查全局缓存，已签到则直接退出
-    if check_global_sign_cache():
-        final_msg = ["✅ 今日已签到，跳过所有操作"]
-        send_wpush("夸克网盘自动签到", "\n".join(final_msg))
-        
-        # 输出成功状态给YAML
-        github_output = os.getenv('GITHUB_OUTPUT')
-        if github_output:
-            with open(github_output, 'a', encoding='utf-8') as f:
-                f.write("overall_success=true\n")
-        
-        print("\n" + "="*50)
-        print("---------- 夸克网盘自动签到结束 ----------")
-        print("="*50)
-        return "\n".join(final_msg)
     
     final_msg = [f"夸克网盘签到结果汇总（{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}）:"]
     overall_success = True
@@ -390,7 +355,7 @@ def main():
         final_content
     )
     
-    # 输出状态给Workflow
+    # 修复：替换过时的set-output为环境文件输出
     github_output = os.getenv('GITHUB_OUTPUT')
     if github_output:
         with open(github_output, 'a', encoding='utf-8') as f:
@@ -412,7 +377,7 @@ if __name__ == "__main__":
         error_msg = f"❌ 脚本执行异常: {str(e)}"
         print(error_msg)
         send_wpush("夸克签到脚本异常", error_msg)
-        # 异常时输出状态到环境文件
+        # 修复：异常时输出状态到环境文件
         github_output = os.getenv('GITHUB_OUTPUT')
         if github_output:
             with open(github_output, 'a', encoding='utf-8') as f:
