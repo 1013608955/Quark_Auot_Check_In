@@ -6,6 +6,8 @@ import requests
 from urllib.parse import quote, urlparse, parse_qs, unquote
 from datetime import datetime
 from pathlib import Path
+import time
+import logging
 
 # ===================== 配置说明 =====================
 # GitHub仓库变量配置：
@@ -13,21 +15,32 @@ from pathlib import Path
 # 2. WPUSH_KEY：填wpush.cn获取的推送Token
 # =====================================================
 
-# 自定义配置（替换为你抓包的真实值）
+# 自定义配置
 USER_AGENT = "Mozilla/5.0 (Linux; Android 13; SM-G9980 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.130 Mobile Safari/537.36 Quark/10.1.2.973"
 QUARK_COOKIE = ""  # 抓包的完整Cookie字符串（可选，填后提升成功率）
 
 # 文件路径（使用工作目录直接存储，避免缓存问题）
 CACHE_FILE = os.path.join(os.getcwd(), ".last_success_date")
 
+# 配置日志级别
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("quark_sign.log")
+    ]
+)
+logger = logging.getLogger("QuarkSign")
+
 def send_wpush(title, content):
     """适配WPush官方v1接口的推送实现"""
     wpush_key = os.getenv("WPUSH_KEY")
     if not wpush_key:
-        print("❌ 未配置WPUSH_KEY仓库变量，跳过推送")
+        logger.info("❌ 未配置WPUSH_KEY仓库变量，跳过推送")
         return
     
-    # 限制内容长度（避免接口截断）
+    # 限制内容长度
     max_content_len = 2000
     if len(content) > max_content_len:
         content = content[:max_content_len] + "\n\n【内容过长，已截断】"
@@ -56,16 +69,16 @@ def send_wpush(title, content):
         
         result = response.json()
         if result.get("code") == 0:
-            print("✅ WPush推送成功")
+            logger.info("✅ WPush推送成功")
         else:
-            print(f"❌ WPush推送失败: {result.get('msg', '未知错误')} | 响应码: {result.get('code')}")
+            logger.error(f"❌ WPush推送失败: {result.get('msg', '未知错误')} | 响应码: {result.get('code')}")
     except json.JSONDecodeError:
-        print(f"❌ WPush推送响应非JSON格式: {response.text[:100]}...")
+        logger.error(f"❌ WPush推送响应非JSON格式: {response.text[:100]}...")
     except requests.exceptions.Timeout:
-        print("❌ WPush推送超时，请检查网络")
+        logger.error("❌ WPush推送超时，请检查网络")
     except Exception as e:
-        print(f"❌ WPush推送异常: {str(e)}")
-        
+        logger.error(f"❌ WPush推送异常: {str(e)}")
+
 def parse_cookie_from_url(url_str):
     """从完整URL中解析kps/sign/vcode参数"""
     try:
@@ -84,38 +97,39 @@ def parse_cookie_from_url(url_str):
         sign = unquote(sign).replace(" ", "+") if sign else ''
         vcode = unquote(vcode) if vcode else ''
         
-        print(f"✅ 解析后的参数: kps={kps} | sign={sign} | vcode={vcode}")
+        logger.info(f"✅ 解析后的参数: kps={kps} | sign={sign} | vcode={vcode}")
         
         if not all([kps, sign, vcode]):
             raise ValueError(f"URL中缺失关键参数 | kps={bool(kps)} | sign={bool(sign)} | vcode={bool(vcode)}")
         
         return f"kps={kps};sign={sign};vcode={vcode}"
     except Exception as e:
-        print(f"❌ URL解析失败: {str(e)} | URL: {url_str[:80]}...")
+        logger.error(f"❌ URL解析失败: {str(e)} | URL: {url_str[:80]}...")
         return ""
 
 def get_env():
     """获取并解析环境变量中的夸克参数"""
     if "COOKIE_QUARK" not in os.environ:
         err_msg = "❌ 未添加COOKIE_QUARK仓库变量"
-        print(err_msg)
+        logger.error(err_msg)
         send_wpush("夸克自动签到", err_msg)
         sys.exit(0)
     
     cookie_raw = os.environ.get("COOKIE_QUARK", "").strip()
     if not cookie_raw:
         err_msg = "❌ COOKIE_QUARK变量值为空"
-        print(err_msg)
+        logger.error(err_msg)
         send_wpush("夸克自动签到", err_msg)
         sys.exit(0)
     
-    raw_list = re.split(r'\n|\&\&', cookie_raw)
+    # 清理无效字符并分割
+    raw_list = [item for item in re.split(r'\n|\s*&&\s*', cookie_raw) if item.strip()]
     cookie_list = []
     
     for idx, item in enumerate(raw_list, 1):
         item = item.strip()
         if not item:
-            print(f"⚠️  第{idx}个账号配置为空，跳过")
+            logger.warning(f"⚠️  第{idx}个账号配置为空，跳过")
             continue
         
         if item.startswith("http"):
@@ -123,20 +137,20 @@ def get_env():
             if parsed_cookie:
                 cookie_list.append(parsed_cookie)
             else:
-                print(f"⚠️  第{idx}个账号URL解析失败，跳过")
+                logger.warning(f"⚠️  第{idx}个账号URL解析失败，跳过")
         else:
             if all(key in item for key in ["kps=", "sign=", "vcode="]):
                 cookie_list.append(item.strip())
             else:
-                print(f"⚠️  第{idx}个账号参数不完整，跳过 | 内容: {item[:50]}...")
+                logger.warning(f"⚠️  第{idx}个账号参数不完整，跳过 | 内容: {item[:50]}...")
     
     if not cookie_list:
         err_msg = "❌ COOKIE_QUARK解析后无有效账号，请检查URL格式"
-        print(err_msg)
+        logger.error(err_msg)
         send_wpush("夸克自动签到", err_msg)
         sys.exit(0)
     
-    print(f"✅ 成功解析{len(cookie_list)}个有效账号")
+    logger.info(f"✅ 成功解析{len(cookie_list)}个有效账号")
     return cookie_list
 
 class Quark:
@@ -175,8 +189,8 @@ class Quark:
             i += 1
         return f"{b:.2f} {units[i]}"
 
-    def _request(self, method, url, params=None, json=None):
-        """统一请求封装（补充关键请求头）"""
+    def _request(self, method, url, params=None, json=None, retries=3):
+        """统一请求封装（补充关键请求头，增加指数退避重试）"""
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "application/json, text/plain, */*",
@@ -189,49 +203,63 @@ class Quark:
         if QUARK_COOKIE:
             headers["Cookie"] = QUARK_COOKIE
         
-        try:
-            session = requests.Session()
-            session.mount('https://', requests.adapters.HTTPAdapter(max_retries=3))
-            
-            if method.lower() == "get":
-                resp = session.get(
-                    url, 
-                    params=params, 
-                    headers=headers, 
-                    timeout=20,
-                    verify=False
-                )
-            elif method.lower() == "post":
-                resp = session.post(
-                    url, 
-                    params=params, 
-                    json=json, 
-                    headers=headers, 
-                    timeout=20,
-                    verify=False
-                )
-            else:
-                raise ValueError(f"不支持的请求方法: {method}")
-            
-            print(f"🔍 {self.user_name} 请求状态码: {resp.status_code} | URL: {url[:80]}")
-            
-            resp.raise_for_status()
-            result = resp.json()
-            
-            if result.get("code") != 0 and not result.get("data"):
-                err_msg = result.get("message", result.get("msg", "未知错误"))
-                print(f"{self.user_name} 接口返回错误: {err_msg} | 响应码: {result.get('code')}")
+        for attempt in range(retries):
+            try:
+                session = requests.Session()
+                session.mount('https://', requests.adapters.HTTPAdapter(max_retries=3))
+                
+                if method.lower() == "get":
+                    resp = session.get(
+                        url, 
+                        params=params, 
+                        headers=headers, 
+                        timeout=20,
+                        verify=False
+                    )
+                elif method.lower() == "post":
+                    resp = session.post(
+                        url, 
+                        params=params, 
+                        json=json, 
+                        headers=headers, 
+                        timeout=20,
+                        verify=False
+                    )
+                else:
+                    raise ValueError(f"不支持的请求方法: {method}")
+                
+                logger.info(f"🔍 {self.user_name} 请求状态码: {resp.status_code} | URL: {url[:80]}")
+                
+                resp.raise_for_status()
+                result = resp.json()
+                
+                if result.get("code") != 0 and not result.get("data"):
+                    err_msg = result.get("message", result.get("msg", "未知错误"))
+                    logger.error(f"{self.user_name} 接口返回错误: {err_msg} | 响应码: {result.get('code')}")
+                    return False
+                return result.get("data", {})
+            except requests.exceptions.HTTPError as e:
+                if attempt < retries - 1:
+                    wait_time = 2 ** attempt  # 指数退避
+                    logger.warning(f"{self.user_name} HTTP错误: {str(e)} | 状态码: {resp.status_code if 'resp' in locals() else '未知'}, 重试中 (尝试 {attempt+1}/{retries})")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"{self.user_name} HTTP错误: {str(e)} | 状态码: {resp.status_code if 'resp' in locals() else '未知'}")
+                    return False
+            except requests.exceptions.RequestException as e:
+                if attempt < retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"{self.user_name} 请求异常: {str(e)}, 重试中 (尝试 {attempt+1}/{retries})")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"{self.user_name} 请求异常: {str(e)}")
+                    return False
+            except ValueError as e:
+                logger.error(f"{self.user_name} 响应解析异常: {str(e)} | 响应内容: {resp.text[:100] if 'resp' in locals() else '无'}")
                 return False
-            return result.get("data", {})
-        except requests.exceptions.HTTPError as e:
-            print(f"{self.user_name} HTTP错误: {str(e)} | 状态码: {resp.status_code if 'resp' in locals() else '未知'}")
-            return False
-        except requests.exceptions.RequestException as e:
-            print(f"{self.user_name} 请求异常: {str(e)}")
-            return False
-        except ValueError as e:
-            print(f"{self.user_name} 响应解析异常: {str(e)} | 响应内容: {resp.text[:100] if 'resp' in locals() else '无'}")
-            return False
+        return False
 
     def get_growth_info(self):
         """获取用户成长/签到基础信息"""
@@ -308,19 +336,21 @@ class Quark:
 
 def main():
     """主执行函数（输出状态给Workflow）"""
-    print("="*50)
-    print("---------- 夸克网盘自动签到开始 ----------")
-    print(f"执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*50)
+    logger.info("="*50)
+    logger.info("---------- 夸克网盘自动签到开始 ----------")
+    logger.info(f"执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("="*50)
     
     final_msg = [f"夸克网盘签到结果汇总（{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}）:"]
     overall_success = True
+    success_count = 0
+    failure_count = 0
     
     cookie_list = get_env()
     final_msg.append(f"📊 检测到有效账号数: {len(cookie_list)}")
     
     for idx, cookie_str in enumerate(cookie_list, 1):
-        print(f"\n{'='*30} 处理第{idx}个账号 {'='*30}")
+        logger.info(f"\n{'='*30} 处理第{idx}个账号 {'='*30}")
         try:
             user_data = {}
             for item in cookie_str.split(";"):
@@ -332,16 +362,24 @@ def main():
             quark = Quark(user_data, idx)
             sign_log, sign_success = quark.do_sign()
             final_msg.append(sign_log)
-            print(sign_log)
+            logger.info(sign_log)
             
-            if not sign_success:
+            if sign_success:
+                success_count += 1
+            else:
+                failure_count += 1
                 overall_success = False
         except Exception as e:
             err_log = f"\n📱 第{idx}个账号 | ❌ 处理失败: {str(e)}"
             final_msg.append(err_log)
-            print(err_log)
+            logger.error(err_log)
+            failure_count += 1
             overall_success = False
-        print(f"{'='*70}")
+        logger.info(f"{'='*70}")
+    
+    # 优化输出信息
+    summary = f"✅ 成功: {success_count} | ❌ 失败: {failure_count} | 总账号: {len(cookie_list)}"
+    final_msg.insert(1, summary)
     
     final_content = "\n".join(final_msg)
     send_wpush(
@@ -354,14 +392,19 @@ def main():
     if github_output:
         with open(github_output, 'a', encoding='utf-8') as f:
             f.write(f"overall_success={str(overall_success).lower()}\n")
-    print(f"📤 签到状态输出: overall_success={str(overall_success).lower()}")
+            f.write(f"success_count={success_count}\n")
+            f.write(f"failure_count={failure_count}\n")
+    logger.info(f"📤 签到状态输出: overall_success={str(overall_success).lower()}")
     
-    print("\n" + "="*50)
-    print("---------- 夸克网盘自动签到结束 ----------")
-    print("="*50)
+    logger.info("\n" + "="*50)
+    logger.info("---------- 夸克网盘自动签到结束 ----------")
+    logger.info("="*50)
+    
+    # 返回内容用于日志
     return final_content
 
 if __name__ == "__main__":
+    # 确保环境变量正确
     os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
     os.environ.setdefault('REQUESTS_CA_BUNDLE', '')
     
@@ -369,11 +412,13 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         error_msg = f"❌ 脚本执行异常: {str(e)}"
-        print(error_msg)
+        logger.error(error_msg)
         send_wpush("夸克签到脚本异常", error_msg)
         github_output = os.getenv('GITHUB_OUTPUT')
         if github_output:
             with open(github_output, 'a', encoding='utf-8') as f:
                 f.write("overall_success=false\n")
-        print("📤 签到状态输出: overall_success=false")
+                f.write("success_count=0\n")
+                f.write("failure_count=1\n")
+        logger.error("📤 签到状态输出: overall_success=false")
         sys.exit(1)
