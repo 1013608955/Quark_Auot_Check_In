@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: '0 1 * * *'   # 北京时间 09:00 (UTC+8)
     - cron: '0 5 * * *'   # 北京时间 13:00 (UTC+8)
-  workflow_dispatch:      # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   check-if-already-signed:
@@ -15,30 +15,25 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: 恢复签到成功记录缓存
-        id: cache-success-restore
-        uses: actions/cache@v4
-        with:
-          path: .last_success_date
-          key: last-success-marker
-
-      - name: 判断是否已签到
+      - name: 检查是否已签到
         id: check
         run: |
+          # 获取当前北京时间（UTC+8）
           current_date=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
           echo "当前北京时间: $current_date"
-
+          
+          # 检查本地文件是否存在
           if [ -f .last_success_date ]; then
             last_date=$(cat .last_success_date)
             echo "上次签到日期: $last_date"
             if [ "$last_date" = "$current_date" ]; then
-              echo "今天已成功签到，跳过执行。"
+              echo "✅ 今天已成功签到，跳过执行。"
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
-
-          echo "今天尚未签到，继续执行。"
+          
+          echo "📅 今天尚未签到，继续执行。"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
   sign-in:
@@ -53,14 +48,14 @@ jobs:
         if: github.event.schedule == '0 1 * * *'
         run: |
           delay=$((RANDOM % 60))
-          echo "早上签到，延迟 $delay 秒后开始.."
+          echo "⏰ 早上签到，延迟 $delay 秒后开始.."
           sleep $delay
 
       - name: 随机延迟（下午/手动触发）
         if: github.event.schedule == '0 5 * * *' || github.event_name == 'workflow_dispatch'
         run: |
           delay=$((RANDOM % 30))
-          echo "下午兜底或手动触发，延迟 $delay 秒后开始.."
+          echo "⏰ 下午兜底或手动触发，延迟 $delay 秒后开始.."
           sleep $delay
 
       - name: 设置Python环境
@@ -78,19 +73,12 @@ jobs:
           WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
         run: python checkIn_Quark.py
 
-      - name: 标记今天签到成功
+      - name: 标记今日签到成功（立即更新文件）
         if: steps.sign_script.outputs.overall_success == 'true'
         run: |
           date_str=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
           echo "$date_str" > .last_success_date
-          echo "已记录成功签到日期: $date_str"
-
-      - name: 保存成功记录到缓存
-        if: steps.sign_script.outputs.overall_success == 'true'
-        uses: actions/cache@v4
-        with:
-          path: .last_success_date
-          key: last-success-marker
+          echo "✅ 已记录成功签到日期: $date_str"
 
       - name: 清理旧的工作流记录
         uses: Mattraks/delete-workflow-runs@main
