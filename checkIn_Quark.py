@@ -18,8 +18,7 @@ from pathlib import Path
 USER_AGENT = "Mozilla/5.0 (Linux; Android 13; SM-G9980 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.130 Mobile Safari/537.36 Quark/10.1.2.973"
 QUARK_COOKIE = ""  # 抓包的完整Cookie字符串（可选，填后提升成功率）
 
-# 缓存文件路径（GitHub Action中使用临时目录）
-CACHE_DIR = os.getenv("RUNNER_TEMP", "/tmp")
+# 缓存文件路径（与YAML统一，仅存纯日期）
 CACHE_FILE = os.path.join(os.getcwd(), ".last_success_date")
 
 def send_wpush(title, content):
@@ -145,58 +144,23 @@ def get_env():
     print(f"✅ 成功解析{len(cookie_list)}个有效账号")
     return cookie_list
 
-def read_sign_cache(user_index):
-    """读取指定账号的签到缓存"""
+def check_global_sign_cache():
+    """检查全局签到缓存（与YAML统一，仅判断日期）"""
     try:
         if not os.path.exists(CACHE_FILE):
             return False
         
         with open(CACHE_FILE, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f.readlines() if line.strip()]
+            last_date = f.read().strip()
         
         today = datetime.now().strftime("%Y-%m-%d")
-        for line in lines:
-            try:
-                idx, sign_date, sign_status = line.split("|", 2)
-                if idx == str(user_index) and sign_date == today and sign_status == "success":
-                    return True
-            except ValueError:
-                continue
+        if last_date == today:
+            print(f"✅ 全局缓存显示今日({today})已签到，跳过所有账号处理")
+            return True
         return False
     except Exception as e:
-        print(f"❌ 读取缓存失败: {str(e)} | 缓存文件: {CACHE_FILE}")
+        print(f"❌ 读取全局缓存失败: {str(e)} | 缓存文件: {CACHE_FILE}")
         return False
-
-def write_sign_cache(user_index, sign_success):
-    """写入签到缓存（确保目录存在）"""
-    try:
-        Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
-        
-        today = datetime.now().strftime("%Y-%m-%d")
-        existing = []
-        if os.path.exists(CACHE_FILE):
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
-                existing = [line.strip() for line in f.readlines() if line.strip()]
-        
-        new_lines = []
-        for line in existing:
-            try:
-                idx = line.split("|", 1)[0]
-                if idx != str(user_index):
-                    new_lines.append(line)
-            except ValueError:
-                continue
-        
-        if sign_success:
-            new_lines.append(f"{user_index}|{today}|success")
-        
-        new_lines = sorted(list(set(new_lines)))
-        with open(CACHE_FILE, "w", encoding="utf-8") as f:
-            f.write("\n".join(new_lines) + "\n")
-        
-        print(f"📝 账号{user_index}缓存已更新: {'签到成功' if sign_success else '签到失败，清除缓存'}")
-    except Exception as e:
-        print(f"❌ 写入缓存失败: {str(e)} | 缓存文件: {CACHE_FILE}")
 
 class Quark:
     """夸克网盘签到类"""
@@ -332,14 +296,9 @@ class Quark:
         log = [f"\n📱 {self.user_name}"]
         sign_success = False
         
-        if read_sign_cache(self.user_index):
-            log.append("✅ 缓存显示今日已成功签到，跳过执行（如需重新签到请清除缓存）")
-            return "\n".join(log), True
-        
         growth_info = self.get_growth_info()
         if not growth_info:
             log.append("❌ 获取签到基础信息失败（Cookie可能已失效/参数错误）")
-            write_sign_cache(self.user_index, False)
             return "\n".join(log), False
         
         total_cap = self.convert_bytes(growth_info.get("total_capacity", 0))
@@ -370,8 +329,6 @@ class Quark:
         balance = self.queryBalance()
         log.append(f"🎁 抽奖余额: {balance}")
         
-        write_sign_cache(self.user_index, sign_success)
-        
         return "\n".join(log), sign_success
 
 def main():
@@ -380,6 +337,22 @@ def main():
     print("---------- 夸克网盘自动签到开始 ----------")
     print(f"执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*50)
+    
+    # 第一步：检查全局缓存，已签到则直接退出
+    if check_global_sign_cache():
+        final_msg = ["✅ 今日已签到，跳过所有操作"]
+        send_wpush("夸克网盘自动签到", "\n".join(final_msg))
+        
+        # 输出成功状态给YAML
+        github_output = os.getenv('GITHUB_OUTPUT')
+        if github_output:
+            with open(github_output, 'a', encoding='utf-8') as f:
+                f.write("overall_success=true\n")
+        
+        print("\n" + "="*50)
+        print("---------- 夸克网盘自动签到结束 ----------")
+        print("="*50)
+        return "\n".join(final_msg)
     
     final_msg = [f"夸克网盘签到结果汇总（{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}）:"]
     overall_success = True
@@ -417,7 +390,7 @@ def main():
         final_content
     )
     
-    # 修复：替换过时的set-output为环境文件输出
+    # 输出状态给Workflow
     github_output = os.getenv('GITHUB_OUTPUT')
     if github_output:
         with open(github_output, 'a', encoding='utf-8') as f:
@@ -439,7 +412,7 @@ if __name__ == "__main__":
         error_msg = f"❌ 脚本执行异常: {str(e)}"
         print(error_msg)
         send_wpush("夸克签到脚本异常", error_msg)
-        # 修复：异常时输出状态到环境文件
+        # 异常时输出状态到环境文件
         github_output = os.getenv('GITHUB_OUTPUT')
         if github_output:
             with open(github_output, 'a', encoding='utf-8') as f:
