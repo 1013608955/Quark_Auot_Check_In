@@ -12,6 +12,14 @@ jobs:
     outputs:
       skip: ${{ steps.check.outputs.skip }}
     steps:
+      - name: 恢复签到状态缓存
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: .last_success_date
+          key: ${{ runner.os }}-last-success-date-${{ github.ref }}
+          restore-keys: ${{ runner.os }}-last-success-date-
+
       - name: 检查是否已签到
         id: check
         run: |
@@ -19,18 +27,22 @@ jobs:
           current_date=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
           echo "当前北京时间: $current_date"
           
-          # 从环境变量获取上次签到日期
-          last_date="${{ env.LAST_SUCCESS_DATE }}"
-          
-          # 如果环境变量未设置或与当前日期不同
-          if [ -z "$last_date" ] || [ "$last_date" != "$current_date" ]; then
-            echo "📅 今天尚未签到，继续执行。"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "LAST_SUCCESS_DATE=$current_date" >> "$GITHUB_ENV"
-          else
-            echo "✅ 今天已成功签到，跳过执行。"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          # 检查缓存文件是否存在
+          if [ -f .last_success_date ]; then
+            last_date=$(cat .last_success_date)
+            echo "上次签到日期: $last_date"
+            if [ "$last_date" = "$current_date" ]; then
+              echo "✅ 今天已成功签到，跳过执行。"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
+          
+          echo "📅 今天尚未签到，继续执行。"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          
+          # 更新缓存：将当前日期写入文件
+          echo "$current_date" > .last_success_date
 
   sign-in:
     needs: check-if-already-signed
@@ -68,6 +80,13 @@ jobs:
           COOKIE_QUARK: ${{ secrets.COOKIE_QUARK }}
           WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
         run: python checkIn_Quark.py
+
+      - name: 确认签到状态（调试用）
+        if: always()
+        run: |
+          echo "签到状态: ${{ needs.check-if-already-signed.outputs.skip }}"
+          echo "当前日期: $(TZ='Asia/Shanghai' date '+%Y-%m-%d')"
+          echo "缓存文件内容: $(cat .last_success_date 2>/dev/null || echo '文件不存在')"
 
       - name: 清理旧的工作流记录
         uses: Mattraks/delete-workflow-runs@main
