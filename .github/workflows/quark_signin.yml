@@ -12,40 +12,28 @@ jobs:
     outputs:
       skip: ${{ steps.check.outputs.skip }}
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v3
-
-      - name: 恢复签到成功记录缓存
-        id: cache-success-restore
-        uses: actions/cache@v4
-        with:
-          path: .last_success_date
-          key: last-success-marker
-
-      - name: 判断是否已签到
+      - name: 判断是否已签到（读取仓库变量）
         id: check
         run: |
+          # 获取当前北京时间（格式：2026-01-02）
           current_date=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
           echo "当前北京时间: $current_date"
-
-          if [ -f .last_success_date ]; then
-            last_date=$(cat .last_success_date)
-            echo "上次签到日期: $last_date"
-            if [ "$last_date" = "$current_date" ]; then
-              echo "今天已成功签到，跳过执行。"
-              # ========== 关键修改1：已签到时 skip=true（跳过） ==========
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          
+          # 读取仓库变量中存储的上次签到日期（无则为空）
+          last_success_date="${{ vars.LAST_SUCCESS_DATE || '' }}"
+          echo "上次签到日期: $last_success_date"
+          
+          # 判断是否已签到
+          if [ "$last_success_date" = "$current_date" ]; then
+            echo "✅ 今天已成功签到，跳过执行"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "🔄 今天尚未签到，继续执行"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-
-          echo "今天尚未签到，继续执行。"
-          # ========== 关键修改2：未签到时 skip=false（执行） ==========
-          echo "skip=false" >> "$GITHUB_OUTPUT"
 
   sign-in:
     needs: check-if-already-signed
-    # ========== 关键修改3：条件改为 skip == 'false'（未签到才执行） ==========
     if: needs.check-if-already-signed.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
@@ -81,19 +69,24 @@ jobs:
           WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
         run: python checkIn_Quark.py
 
-      - name: 标记今天签到成功
-        if: steps.sign_script.outputs.overall_success == 'true'  # 仅实际签到成功时执行
-        run: |
-          date_str=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
-          echo "$date_str" > .last_success_date
-          echo "已记录成功签到日期: $date_str"
-
-      - name: 保存成功记录到缓存
-        if: steps.sign_script.outputs.overall_success == 'true'  # 仅实际签到成功时保存
-        uses: actions/cache@v4
+      - name: 标记今天签到成功（更新仓库变量）
+        if: steps.sign_script.outputs.overall_success == 'true'
+        uses: actions/github-script@v7
         with:
-          path: .last_success_date
-          key: last-success-marker
+          script: |
+            # 生成北京时间格式的日期（2026-01-02）
+            const currentDate = new Date().toLocaleDateString('zh-CN', { 
+              timeZone: 'Asia/Shanghai' 
+            }).replace(/\//g, '-');
+            
+            # 更新仓库变量 LAST_SUCCESS_DATE
+            await github.rest.repos.updateRepoVariable({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'LAST_SUCCESS_DATE',
+              value: currentDate
+            });
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 清理旧的工作流记录
         uses: Mattraks/delete-workflow-runs@main
