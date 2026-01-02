@@ -6,6 +6,10 @@ on:
     - cron: '0 5 * * *'   # 北京时间 13:00 (UTC+8)
   workflow_dispatch:      # 允许手动触发
 
+permissions:  # 关键：添加必要权限
+  actions: write  # 授予更新变量的权限
+  contents: read   # 授予读取代码的权限
+
 jobs:
   check-if-already-signed:
     runs-on: ubuntu-latest
@@ -69,26 +73,41 @@ jobs:
           WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
         run: python checkIn_Quark.py
 
-      - name: 标记今天签到成功（curl直接调用API更新变量）
+      - name: 标记今天签到成功（修复API调用）
         if: steps.sign_script.outputs.overall_success == 'true'
         run: |
           # 生成北京时间格式的日期（2026-01-02）
           CURRENT_DATE=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
-          # 仓库所有者和仓库名（自动获取）
-          OWNER="${{ github.repository_owner }}"
-          REPO="${{ github.event.repository.name }}"
+          # 拆分仓库所有者和仓库名（更可靠的方式）
+          REPO_FULL="${{ github.repository }}"  # 格式：owner/repo
+          OWNER=$(echo "$REPO_FULL" | cut -d '/' -f 1)
+          REPO=$(echo "$REPO_FULL" | cut -d '/' -f 2)
           # GitHub Token
           TOKEN="${{ secrets.GITHUB_TOKEN }}"
           
-          # 调用GitHub REST API创建/更新变量（最底层，无版本问题）
-          curl -L -X PUT \
+          echo "📌 调试信息：OWNER=$OWNER, REPO=$REPO, DATE=$CURRENT_DATE"
+          
+          # 调用GitHub REST API创建/更新变量（带错误处理）
+          RESPONSE=$(curl -s -w "%{http_code}" -L -X PUT \
             "https://api.github.com/repos/$OWNER/$REPO/actions/variables/LAST_SUCCESS_DATE" \
             -H "Authorization: token $TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            -d "{\"name\":\"LAST_SUCCESS_DATE\",\"value\":\"$CURRENT_DATE\"}"
+            -d "{\"name\":\"LAST_SUCCESS_DATE\",\"value\":\"$CURRENT_DATE\"}")
           
-          echo "✅ 已成功更新仓库变量 LAST_SUCCESS_DATE = $CURRENT_DATE"
+          # 打印响应信息，方便调试
+          echo "🔍 API响应：$RESPONSE"
+          
+          # 检查HTTP状态码
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "204" ]; then
+            echo "✅ 已成功更新仓库变量 LAST_SUCCESS_DATE = $CURRENT_DATE"
+          else
+            echo "❌ 更新变量失败！状态码：$HTTP_CODE，响应体：$BODY"
+            exit 1  # 标记步骤失败
+          fi
 
       - name: 清理旧的工作流记录
         uses: Mattraks/delete-workflow-runs@main
