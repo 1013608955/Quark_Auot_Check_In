@@ -71,7 +71,7 @@ jobs:
 
       - name: 标记今天签到成功（更新仓库变量）
         if: steps.sign_script.outputs.overall_success == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v7.0.1  # 固定稳定版本
         with:
           script: |
             // 生成北京时间格式的日期（2026-01-02）
@@ -79,8 +79,8 @@ jobs:
               timeZone: 'Asia/Shanghai' 
             }).replace(/\//g, '-');
             
-            // 更新仓库变量 LAST_SUCCESS_DATE
-            await github.rest.repos.updateRepoVariable({
+            // 正确的API方法：创建/更新仓库变量（原子操作）
+            await github.rest.repos.createOrUpdateRepoVariable({
               owner: context.repo.owner,
               repo: context.repo.repo,
               name: 'LAST_SUCCESS_DATE',
