@@ -11,15 +11,13 @@ from pathlib import Path
 # GitHub仓库变量配置：
 # 1. COOKIE_QUARK：填完整的夸克接口URL，多账号用 && 或 \n 分隔
 # 2. WPUSH_KEY：填wpush.cn获取的推送Token
-# 3. 可选：替换下方抓包的真实User-Agent/完整Cookie（提升401成功率）
 # =====================================================
 
 # 自定义配置（替换为你抓包的真实值）
 USER_AGENT = "Mozilla/5.0 (Linux; Android 13; SM-G9980 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.130 Mobile Safari/537.36 Quark/10.1.2.973"
 QUARK_COOKIE = ""  # 抓包的完整Cookie字符串（可选，填后提升成功率）
 
-# 缓存文件路径（GitHub Action中使用临时目录）
-CACHE_DIR = os.getenv("RUNNER_TEMP", "/tmp")
+# 文件路径（使用工作目录直接存储，避免缓存问题）
 CACHE_FILE = os.path.join(os.getcwd(), ".last_success_date")
 
 def send_wpush(title, content):
@@ -36,13 +34,11 @@ def send_wpush(title, content):
     
     # 官方接口地址
     url = "https://api.wpush.cn/api/v1/send"
-    # 请求参数（JSON格式）
     payload = {
         "apikey": wpush_key,
         "title": title[:50],
         "content": content
     }
-    # 请求头
     headers = {
         "Content-Type": "application/json",
         "User-Agent": "QuarkSign/1.0"
@@ -84,12 +80,10 @@ def parse_cookie_from_url(url_str):
         sign = query_params.get('sign', [''])[0]
         vcode = query_params.get('vcode', [''])[0]
         
-        # 关键修复：解码后还原kps/sign中的+号（URL编码中+会被解析为空格）
         kps = unquote(kps).replace(" ", "+") if kps else ''
         sign = unquote(sign).replace(" ", "+") if sign else ''
         vcode = unquote(vcode) if vcode else ''
         
-        # 完整输出解析后的参数
         print(f"✅ 解析后的参数: kps={kps} | sign={sign} | vcode={vcode}")
         
         if not all([kps, sign, vcode]):
@@ -275,7 +269,7 @@ class Quark:
         return result.get("balance", "0") if result else "查询失败"
 
     def do_sign(self):
-        """执行完整签到流程（已移除缓存检查）"""
+        """执行完整签到流程（无需缓存检查）"""
         log = [f"\n📱 {self.user_name}"]
         
         growth_info = self.get_growth_info()
@@ -355,7 +349,7 @@ def main():
         final_content
     )
     
-    # 修复：替换过时的set-output为环境文件输出
+    # 输出状态到环境变量（确保Workflow能识别）
     github_output = os.getenv('GITHUB_OUTPUT')
     if github_output:
         with open(github_output, 'a', encoding='utf-8') as f:
@@ -377,7 +371,6 @@ if __name__ == "__main__":
         error_msg = f"❌ 脚本执行异常: {str(e)}"
         print(error_msg)
         send_wpush("夸克签到脚本异常", error_msg)
-        # 修复：异常时输出状态到环境文件
         github_output = os.getenv('GITHUB_OUTPUT')
         if github_output:
             with open(github_output, 'a', encoding='utf-8') as f:
