@@ -1,4 +1,4 @@
-name: Quark签到 (优化版)
+name: Quark签到
 
 on:
   schedule:
@@ -23,6 +23,7 @@ jobs:
       - name: 检查是否已签到
         id: check
         run: |
+          # 获取当前北京时间（UTC+8）
           current_date=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
           echo "当前北京时间: $current_date"
           
@@ -39,6 +40,9 @@ jobs:
           
           echo "📅 今天尚未签到，继续执行。"
           echo "skip=false" >> "$GITHUB_OUTPUT"
+          
+          # 更新缓存：将当前日期写入文件
+          echo "$current_date" > .last_success_date
 
   sign-in:
     needs: check-if-already-signed
@@ -70,37 +74,25 @@ jobs:
       - name: 安装依赖
         run: pip install requests
 
-      - name: 执行签到脚本 (已优化)
+      - name: 执行签到脚本
         id: sign_script
         env:
           COOKIE_QUARK: ${{ secrets.COOKIE_QUARK }}
           WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
-        run: |
-          # 确保脚本返回正确退出码
-          python checkIn_Quark.py
-          if [ $? -ne 0 ]; then
-            echo "❌ 签到失败，退出码: $?"
-            exit 1
-          fi
+        run: python checkIn_Quark.py
 
-      - name: 更新签到状态 (仅成功时)
-        if: success()
-        run: |
-          current_date=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
-          echo "✅ 签到成功，更新缓存: $current_date"
-          echo "$current_date" > .last_success_date
-
-      - name: 保存签到状态缓存 (关键修复)
-        if: success()
-        uses: actions/cache@v3
-        with:
-          path: .last_success_date
-          key: ${{ runner.os }}-last-success-date-${{ github.ref }}
-
-      - name: 确认签到状态 (调试用)
+      - name: 确认签到状态（调试用）
         if: always()
         run: |
           echo "签到状态: ${{ needs.check-if-already-signed.outputs.skip }}"
           echo "当前日期: $(TZ='Asia/Shanghai' date '+%Y-%m-%d')"
           echo "缓存文件内容: $(cat .last_success_date 2>/dev/null || echo '文件不存在')"
-          echo "签到结果: ${{ steps.sign_script.outcome }}"
+
+      - name: 清理旧的工作流记录
+        uses: Mattraks/delete-workflow-runs@main
+        if: always()
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 60
