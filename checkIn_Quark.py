@@ -396,7 +396,7 @@ def main():
     logger.info("="*50)
     
     # 返回内容用于日志
-    return final_content
+    return overall_success  # 直接返回状态变量
 
 if __name__ == "__main__":
     # 确保环境变量正确
@@ -404,13 +404,10 @@ if __name__ == "__main__":
     os.environ.setdefault('REQUESTS_CA_BUNDLE', '')
     
     try:
-        result = main()
-        # 确保成功时返回0退出码
-        if "✅ 成功" in result and "❌ 失败" not in result:
-            logger.info("✅ 脚本执行成功，返回退出码 0")
+        success = main()  # 获取布尔值
+        if success:
             sys.exit(0)
         else:
-            logger.error("❌ 脚本执行失败，返回退出码 1")
             sys.exit(1)
     except Exception as e:
         error_msg = f"❌ 脚本执行异常: {str(e)}"
