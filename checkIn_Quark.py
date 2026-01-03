@@ -6,6 +6,7 @@ import requests
 from urllib.parse import quote, urlparse, parse_qs, unquote
 from datetime import datetime
 from pathlib import Path
+import pytz  # 新增：处理时区（GitHub Runner默认UTC，需转为北京时间）
 
 # ===================== 配置说明 =====================
 # GitHub仓库变量配置：
@@ -19,6 +20,8 @@ QUARK_COOKIE = ""  # 抓包的完整Cookie字符串（可选，填后提升成�
 
 # 文件路径（使用工作目录直接存储，避免缓存问题）
 CACHE_FILE = os.path.join(os.getcwd(), ".last_success_date")
+# 北京时间时区
+BEIJING_TZ = pytz.timezone('Asia/Shanghai')
 
 def send_wpush(title, content):
     """适配WPush官方v1接口的推送实现"""
@@ -290,6 +293,9 @@ class Quark:
             daily_reward = self.convert_bytes(cap_sign.get("sign_daily_reward", 0))
             progress = f"{cap_sign.get('sign_progress', 0)}/{cap_sign.get('sign_target', 0)}"
             log.append(f"✅ 接口验证今日已签到 | 获得: {daily_reward} | 连签进度: {progress}")
+            # 查询抽奖余额（修复原代码位置错误）
+            balance = self.queryBalance()
+            log.append(f"🎁 抽奖余额: {balance}")
             return "\n".join(log), True
         else:
             sign_result = self.get_growth_sign()
@@ -297,23 +303,35 @@ class Quark:
                 reward = self.convert_bytes(sign_result.get("sign_daily_reward", 0))
                 progress = f"{cap_sign.get('sign_progress', 0)+1}/{cap_sign.get('sign_target', 0)}"
                 log.append(f"✅ 签到成功 | 获得: {reward} | 连签进度: {progress}")
+                # 查询抽奖余额
+                balance = self.queryBalance()
+                log.append(f"🎁 抽奖余额: {balance}")
                 return "\n".join(log), True
             else:
                 log.append(f"❌ 签到失败 | 原因: 接口返回异常（请检查Cookie有效性/重新抓包）")
                 return "\n".join(log), False
-        
-        balance = self.queryBalance()
-        log.append(f"🎁 抽奖余额: {balance}")
-        return "\n".join(log), True
+
+def write_success_date():
+    """写入成功签到的日期（北京时间）"""
+    try:
+        # 获取当前北京时间的日期
+        beijing_now = datetime.now(BEIJING_TZ)
+        current_date = beijing_now.strftime('%Y-%m-%d')
+        # 写入缓存文件
+        with open(CACHE_FILE, 'w', encoding='utf-8') as f:
+            f.write(current_date)
+        print(f"✅ 已写入成功签到日期: {current_date} 到 {CACHE_FILE}")
+    except Exception as e:
+        print(f"❌ 写入签到日期失败: {str(e)}")
 
 def main():
     """主执行函数（输出状态给Workflow）"""
     print("="*50)
     print("---------- 夸克网盘自动签到开始 ----------")
-    print(f"执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"执行时间: {datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')} (北京时间)")
     print("="*50)
     
-    final_msg = [f"夸克网盘签到结果汇总（{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}）:"]
+    final_msg = [f"夸克网盘签到结果汇总（{datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')} 北京时间）:"]
     overall_success = True
     
     cookie_list = get_env()
@@ -348,6 +366,10 @@ def main():
         "夸克网盘自动签到" + ("（部分账号失败）" if not overall_success else ""),
         final_content
     )
+    
+    # 核心修改：仅当所有账号签到成功时，写入缓存文件
+    if overall_success:
+        write_success_date()
     
     # 输出状态到环境变量（确保Workflow能识别）
     github_output = os.getenv('GITHUB_OUTPUT')
