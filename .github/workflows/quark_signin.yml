@@ -13,12 +13,12 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: 恢复签到状态缓存（关键：在同一个Job中恢复）
+      - name: 恢复签到状态缓存（修复：移除无效TZ变量）
         id: cache
         uses: actions/cache@v3
         with:
           path: .last_success_date
-          key: ${{ runner.os }}-quark-sign-${{ github.ref }}-${{ TZ }}
+          key: ${{ runner.os }}-quark-sign-${{ github.ref }}
           restore-keys: ${{ runner.os }}-quark-sign-${{ github.ref }}-
 
       - name: 检查是否已签到（合并到同一Job）
