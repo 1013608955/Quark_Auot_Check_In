@@ -7,91 +7,109 @@ on:
   workflow_dispatch:
 
 jobs:
-  check-if-already-signed:
-    runs-on: ubuntu-latest
-    outputs:
-      skip: ${{ steps.check.outputs.skip }}
-    steps:
-      - name: 恢复签到状态缓存
-        id: cache
-        uses: actions/cache@v3
-        with:
-          path: .last_success_date
-          key: ${{ runner.os }}-last-success-date-${{ github.ref }}
-          restore-keys: ${{ runner.os }}-last-success-date-
-
-      - name: 检查是否已签到
-        id: check
-        run: |
-          # 获取当前北京时间（UTC+8）
-          current_date=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
-          echo "当前北京时间: $current_date"
-          
-          # 检查缓存文件是否存在且日期匹配
-          skip="false"
-          if [ -f .last_success_date ]; then
-            last_date=$(cat .last_success_date)
-            echo "上次成功签到日期: $last_date"
-            if [ "$last_date" = "$current_date" ]; then
-              echo "✅ 今天已成功签到，跳过执行。"
-              skip="true"
-            fi
-          fi
-          
-          echo "skip=$skip" >> "$GITHUB_OUTPUT"
-          if [ "$skip" = "false" ]; then
-            echo "📅 今天尚未成功签到，继续执行。"
-          fi
-
   sign-in:
-    needs: check-if-already-signed
-    if: needs.check-if-already-signed.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: 随机延迟（早上）
-        if: github.event.schedule == '0 1 * * *'
+      - name: 恢复签到状态缓存（关键：在同一个Job中恢复）
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: .last_success_date
+          key: ${{ runner.os }}-quark-sign-${{ github.ref }}-${{ TZ }}
+          restore-keys: ${{ runner.os }}-quark-sign-${{ github.ref }}-
+
+      - name: 检查是否已签到（合并到同一Job）
+        id: check_sign
         run: |
-          delay=$((RANDOM % 60))
-          echo "⏰ 早上签到，延迟 $delay 秒后开始.."
+          # 强制设置时区并验证
+          export TZ='Asia/Shanghai'
+          current_date=$(date '+%Y-%m-%d')
+          echo "✅ 当前北京时间: $current_date"
+          
+          skip="false"
+          # 检查缓存文件是否存在且日期匹配
+          if [ -f .last_success_date ]; then
+            last_date=$(cat .last_success_date)
+            echo "✅ 缓存文件中的上次成功签到日期: $last_date"
+            if [ "$last_date" = "$current_date" ]; then
+              echo "✅ 今天已成功签到，跳过后续流程"
+              skip="true"
+            else
+              echo "⚠️  缓存日期不匹配（上次：$last_date，当前：$current_date），继续执行"
+            fi
+          else
+            echo "⚠️  未找到签到缓存文件，继续执行"
+          fi
+          
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          echo "current_date=$current_date" >> "$GITHUB_OUTPUT"
+
+      - name: 随机延迟（仅未签到时执行）
+        if: steps.check_sign.outputs.skip == 'false'
+        run: |
+          # 区分早上/下午延迟时间
+          if [ "${{ github.event.schedule }}" = "0 1 * * *" ]; then
+            delay=$((RANDOM % 60))
+            echo "⏰ 早上签到，延迟 $delay 秒后开始.."
+          else
+            delay=$((RANDOM % 30))
+            echo "⏰ 下午兜底/手动触发，延迟 $delay 秒后开始.."
+          fi
           sleep $delay
 
-      - name: 随机延迟（下午/手动触发）
-        if: github.event.schedule == '0 5 * * *' || github.event_name == 'workflow_dispatch'
-        run: |
-          delay=$((RANDOM % 30))
-          echo "⏰ 下午兜底或手动触发，延迟 $delay 秒后开始.."
-          sleep $delay
-
-      - name: 设置Python环境
+      - name: 设置Python环境（仅未签到时执行）
+        if: steps.check_sign.outputs.skip == 'false'
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
 
-      - name: 安装依赖（新增pytz处理时区）
+      - name: 安装依赖（仅未签到时执行）
+        if: steps.check_sign.outputs.skip == 'false'
         run: |
           pip install requests pytz
+          pip list | grep -E "requests|pytz"  # 验证依赖安装
 
-      - name: 执行签到脚本
-        id: sign_script
+      - name: 执行签到脚本（仅未签到时执行）
+        id: run_script
+        if: steps.check_sign.outputs.skip == 'false'
         env:
           COOKIE_QUARK: ${{ secrets.COOKIE_QUARK }}
           WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
-        run: python checkIn_Quark.py
-
-      - name: 确认签到状态（调试用）
-        if: always()
         run: |
-          echo "是否跳过签到: ${{ needs.check-if-already-signed.outputs.skip }}"
-          echo "当前北京时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d')"
-          echo "缓存文件内容: $(cat .last_success_date 2>/dev/null || echo '文件不存在')"
-          echo "脚本输出的签到状态: ${{ steps.sign_script.outputs.overall_success }}"
+          # 执行脚本并捕获输出
+          python checkIn_Quark.py
+          # 读取脚本输出的 overall_success（关键：验证脚本是否认为全部成功）
+          if [ -f "$GITHUB_OUTPUT" ]; then
+            overall_success=$(grep "overall_success" "$GITHUB_OUTPUT" | cut -d'=' -f2)
+            echo "✅ 脚本返回的签到状态: overall_success=$overall_success"
+            echo "overall_success=$overall_success" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ 未找到脚本输出文件"
+            echo "overall_success=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 验证缓存文件写入（仅未签到时执行）
+        if: steps.check_sign.outputs.skip == 'false'
+        run: |
+          current_date=${{ steps.check_sign.outputs.current_date }}
+          if [ -f .last_success_date ]; then
+            written_date=$(cat .last_success_date)
+            echo "✅ 缓存文件已写入，日期：$written_date"
+            if [ "$written_date" = "$current_date" ]; then
+              echo "✅ 写入日期与当前日期一致"
+            else
+              echo "❌ 写入日期异常（当前：$current_date，写入：$written_date）"
+            fi
+          else
+            echo "❌ 脚本执行后未生成缓存文件（可能 overall_success 为 false）"
+          fi
 
       - name: 清理旧的工作流记录
-        uses: Mattraks/delete-workflow-runs@main
         if: always()
+        uses: Mattraks/delete-workflow-runs@main
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
