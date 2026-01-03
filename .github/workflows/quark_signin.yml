@@ -5,32 +5,50 @@ on:
     - cron: '0 1 * * *'   # 北京时间 09:00 (UTC+8)
     - cron: '0 5 * * *'   # 北京时间 13:00 (UTC+8)
   workflow_dispatch:
+    inputs:
+      env:
+        description: '运行环境（prod/test）'
+        required: false
+        default: 'prod'
+        type: choice
+        options:
+          - prod
+          - test
 
 jobs:
   sign-in:
     runs-on: ubuntu-latest
+    # 全局设置北京时间，所有步骤自动继承
+    env:
+      TZ: Asia/Shanghai
+      PYTHONIOENCODING: utf-8  # 统一编码，避免中文乱码
+    # 失败时发送邮件通知（可选，需GitHub账号开启邮件通知）
+    notifications:
+      email:
+        on_failure: always
     steps:
       - name: 检出代码
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # 升级到最新稳定版
 
-      - name: 恢复签到状态缓存（修复：移除无效TZ变量）
+      - name: 恢复签到状态缓存（优化Key策略）
         id: cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4    # 升级到最新稳定版
         with:
           path: .last_success_date
-          key: ${{ runner.os }}-quark-sign-${{ github.ref }}
-          restore-keys: ${{ runner.os }}-quark-sign-${{ github.ref }}-
+          # 缓存Key：系统+项目+分支+时区+日期，避免跨天/跨环境冲突
+          key: ${{ runner.os }}-quark-sign-${{ github.ref }}-${{ env.TZ }}-${{ github.run_date }}
+          restore-keys: |
+            ${{ runner.os }}-quark-sign-${{ github.ref }}-${{ env.TZ }}-
+          enableCrossOsArchive: true  # 跨系统兼容
 
-      - name: 检查是否已签到（合并到同一Job）
+      - name: 检查是否已签到
         id: check_sign
         run: |
-          # 强制设置时区并验证
-          export TZ='Asia/Shanghai'
+          # 全局已设TZ，直接获取北京时间
           current_date=$(date '+%Y-%m-%d')
           echo "✅ 当前北京时间: $current_date"
           
           skip="false"
-          # 检查缓存文件是否存在且日期匹配
           if [ -f .last_success_date ]; then
             last_date=$(cat .last_success_date)
             echo "✅ 缓存文件中的上次成功签到日期: $last_date"
@@ -47,41 +65,43 @@ jobs:
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
           echo "current_date=$current_date" >> "$GITHUB_OUTPUT"
 
-      - name: 随机延迟（仅未签到时执行）
+      - name: 随机延迟（优化判断逻辑）
         if: steps.check_sign.outputs.skip == 'false'
         run: |
-          # 区分早上/下午延迟时间
-          if [ "${{ github.event.schedule }}" = "0 1 * * *" ]; then
+          # 按当前小时判断（更鲁棒，无需硬编码cron）
+          current_hour=$(date '+%H')
+          if [ "$current_hour" -eq 09 ]; then  # 早上9点
             delay=$((RANDOM % 60))
             echo "⏰ 早上签到，延迟 $delay 秒后开始.."
-          else
+          else  # 下午13点/手动触发
             delay=$((RANDOM % 30))
             echo "⏰ 下午兜底/手动触发，延迟 $delay 秒后开始.."
           fi
           sleep $delay
 
-      - name: 设置Python环境（仅未签到时执行）
+      - name: 设置Python环境（优化版本+依赖缓存）
         if: steps.check_sign.outputs.skip == 'false'
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5  # 升级到最新稳定版
         with:
-          python-version: '3.x'
+          python-version: '3.11'      # 固定版本，避免兼容问题
+          cache: 'pip'                # 缓存pip依赖，提升速度
 
-      - name: 安装依赖（仅未签到时执行）
+      - name: 安装依赖
         if: steps.check_sign.outputs.skip == 'false'
         run: |
           pip install requests pytz
           pip list | grep -E "requests|pytz"  # 验证依赖安装
 
-      - name: 执行签到脚本（仅未签到时执行）
+      - name: 执行签到脚本
         id: run_script
         if: steps.check_sign.outputs.skip == 'false'
         env:
+          ENV: ${{ github.event.inputs.env || 'prod' }}  # 环境区分（test/prod）
           COOKIE_QUARK: ${{ secrets.COOKIE_QUARK }}
           WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
         run: |
-          # 执行脚本并捕获输出
           python checkIn_Quark.py
-          # 读取脚本输出的 overall_success（关键：验证脚本是否认为全部成功）
+          # 读取脚本输出状态
           if [ -f "$GITHUB_OUTPUT" ]; then
             overall_success=$(grep "overall_success" "$GITHUB_OUTPUT" | cut -d'=' -f2)
             echo "✅ 脚本返回的签到状态: overall_success=$overall_success"
@@ -91,7 +111,7 @@ jobs:
             echo "overall_success=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: 验证缓存文件写入（仅未签到时执行）
+      - name: 验证缓存文件写入
         if: steps.check_sign.outputs.skip == 'false'
         run: |
           current_date=${{ steps.check_sign.outputs.current_date }}
@@ -107,11 +127,11 @@ jobs:
             echo "❌ 脚本执行后未生成缓存文件（可能 overall_success 为 false）"
           fi
 
-      - name: 清理旧的工作流记录
+      - name: 清理旧的工作流记录（更安全的Action）
         if: always()
-        uses: Mattraks/delete-workflow-runs@main
+        uses: dev-drprasad/delete-older-workflow-runs@v0.3.4
         with:
+          keep_minimum_runs: 60
+          retain_days: 1  # 仅保留1天内记录，减少存储
           token: ${{ github.token }}
           repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 60
