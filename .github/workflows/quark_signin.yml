@@ -27,22 +27,21 @@ jobs:
           current_date=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
           echo "当前北京时间: $current_date"
           
-          # 检查缓存文件是否存在
+          # 检查缓存文件是否存在且日期匹配
+          skip="false"
           if [ -f .last_success_date ]; then
             last_date=$(cat .last_success_date)
-            echo "上次签到日期: $last_date"
+            echo "上次成功签到日期: $last_date"
             if [ "$last_date" = "$current_date" ]; then
               echo "✅ 今天已成功签到，跳过执行。"
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
+              skip="true"
             fi
           fi
           
-          echo "📅 今天尚未签到，继续执行。"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-          
-          # 更新缓存：将当前日期写入文件
-          echo "$current_date" > .last_success_date
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          if [ "$skip" = "false" ]; then
+            echo "📅 今天尚未成功签到，继续执行。"
+          fi
 
   sign-in:
     needs: check-if-already-signed
@@ -71,8 +70,9 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: 安装依赖
-        run: pip install requests
+      - name: 安装依赖（新增pytz处理时区）
+        run: |
+          pip install requests pytz
 
       - name: 执行签到脚本
         id: sign_script
@@ -84,9 +84,10 @@ jobs:
       - name: 确认签到状态（调试用）
         if: always()
         run: |
-          echo "签到状态: ${{ needs.check-if-already-signed.outputs.skip }}"
-          echo "当前日期: $(TZ='Asia/Shanghai' date '+%Y-%m-%d')"
+          echo "是否跳过签到: ${{ needs.check-if-already-signed.outputs.skip }}"
+          echo "当前北京时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d')"
           echo "缓存文件内容: $(cat .last_success_date 2>/dev/null || echo '文件不存在')"
+          echo "脚本输出的签到状态: ${{ steps.sign_script.outputs.overall_success }}"
 
       - name: 清理旧的工作流记录
         uses: Mattraks/delete-workflow-runs@main
