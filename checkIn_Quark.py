@@ -369,8 +369,10 @@ def main():
     
     # 核心修改：仅当所有账号签到成功时，写入缓存文件
     if overall_success:
+        print(f"\n✅ 所有账号签到成功，准备写入缓存文件")
         write_success_date()
-    
+    else:
+        print(f"\n❌ 部分/全部账号签到失败，不写入缓存文件")
     # 输出状态到环境变量（确保Workflow能识别）
     github_output = os.getenv('GITHUB_OUTPUT')
     if github_output:
