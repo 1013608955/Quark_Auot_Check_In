@@ -404,16 +404,17 @@ if __name__ == "__main__":
     os.environ.setdefault('REQUESTS_CA_BUNDLE', '')
     
     try:
-        main()
+        result = main()
+        # 确保成功时返回0退出码
+        if "✅ 成功" in result and "❌ 失败" not in result:
+            logger.info("✅ 脚本执行成功，返回退出码 0")
+            sys.exit(0)
+        else:
+            logger.error("❌ 脚本执行失败，返回退出码 1")
+            sys.exit(1)
     except Exception as e:
         error_msg = f"❌ 脚本执行异常: {str(e)}"
         logger.error(error_msg)
         send_wpush("夸克签到脚本异常", error_msg)
-        github_output = os.getenv('GITHUB_OUTPUT')
-        if github_output:
-            with open(github_output, 'a', encoding='utf-8') as f:
-                f.write("overall_success=false\n")
-                f.write("success_count=0\n")
-                f.write("failure_count=1\n")
         logger.error("📤 签到状态输出: overall_success=false")
         sys.exit(1)
