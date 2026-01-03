@@ -90,6 +90,13 @@ jobs:
           echo "✅ 签到成功，更新缓存: $current_date"
           echo "$current_date" > .last_success_date
 
+      - name: 保存签到状态缓存 (关键修复)
+        if: success()
+        uses: actions/cache@v3
+        with:
+          path: .last_success_date
+          key: ${{ runner.os }}-last-success-date-${{ github.ref }}
+
       - name: 确认签到状态 (调试用)
         if: always()
         run: |
