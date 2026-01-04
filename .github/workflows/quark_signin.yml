@@ -13,7 +13,7 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      # 第一步：仅恢复缓存（废弃原合写的cache步骤）
+      # 第一步：仅恢复缓存（彻底解决save-always废弃问题）
       - name: 恢复签到状态缓存
         id: cache-restore
         uses: actions/cache/restore@v4
@@ -116,18 +116,19 @@ jobs:
             echo "✅ 缓存文件权限已设置"
           fi
 
-      # 第二步：强制保存缓存（核心修复：无论是否命中，都保存最新文件）
+      # 第二步：强制保存缓存（核心修复重复签到的关键）
       - name: 保存签到状态缓存
         id: cache-save
-        if: always()  # 无论前面步骤成功/失败，都保存
+        if: always()  # 无论前面步骤结果如何，都强制保存最新文件
         uses: actions/cache/save@v4
         with:
           path: .last_success_date
           key: ${{ runner.os }}-quark-sign-${{ github.ref }}
 
+      # 修复：使用社区维护的有效Action清理旧记录
       - name: 清理旧的工作流记录
         if: always()
-        uses: actions/delete-workflow-runs@main  # 替换废弃的Mattraks/delete-workflow-runs
+        uses: GitRML/delete-workflow-runs@main
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
