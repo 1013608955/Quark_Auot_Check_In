@@ -13,15 +13,16 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: 恢复签到状态缓存（修复：移除无效TZ变量）
+      - name: 恢复签到状态缓存
         id: cache
         uses: actions/cache@v3
         with:
           path: .last_success_date
           key: ${{ runner.os }}-quark-sign-${{ github.ref }}
           restore-keys: ${{ runner.os }}-quark-sign-${{ github.ref }}-
+          save-always: true  # 关键：始终保存缓存，确保最新日期被持久化
 
-      - name: 检查是否已签到（合并到同一Job）
+      - name: 检查是否已签到
         id: check_sign
         run: |
           # 强制设置时区并验证
@@ -105,6 +106,14 @@ jobs:
             fi
           else
             echo "❌ 脚本执行后未生成缓存文件（可能 overall_success 为 false）"
+          fi
+
+      - name: 确保缓存文件权限正确
+        if: always()
+        run: |
+          if [ -f .last_success_date ]; then
+            chmod 644 .last_success_date
+            echo "✅ 缓存文件权限已设置"
           fi
 
       - name: 清理旧的工作流记录
