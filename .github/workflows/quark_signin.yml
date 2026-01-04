@@ -8,19 +8,25 @@ on:
 
 jobs:
   sign-in:
+    permissions:
+      actions: write  # 赋予缓存操作必要权限
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      # 第一步：仅恢复缓存（彻底解决save-always废弃问题）
+      # 第一步：恢复缓存（优先读取当日缓存，再读历史缓存）
       - name: 恢复签到状态缓存
         id: cache-restore
         uses: actions/cache/restore@v4
         with:
           path: .last_success_date
-          key: ${{ runner.os }}-quark-sign-${{ github.ref }}
-          restore-keys: ${{ runner.os }}-quark-sign-${{ github.ref }}-
+          # 核心修改：key加入当日日期，确保每天缓存唯一
+          key: ${{ runner.os }}-quark-sign-${{ github.ref }}-${{ github.run_date }}
+          # 降级读取：先读分支缓存，再读基础缓存
+          restore-keys: |
+            ${{ runner.os }}-quark-sign-${{ github.ref }}-
+            ${{ runner.os }}-quark-sign-
 
       - name: 检查是否已签到
         id: check_sign
@@ -42,7 +48,7 @@ jobs:
               echo "⚠️  缓存日期不匹配（上次：$last_date，当前：$current_date），继续执行"
             fi
           else
-            echo "⚠️  未找到签到缓存文件，继续执行"
+            echo "⚠️  未找到缓存文件，继续执行"
           fi
           
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
@@ -116,21 +122,33 @@ jobs:
             echo "✅ 缓存文件权限已设置"
           fi
 
-      # 第二步：强制保存缓存（核心修复重复签到的关键）
+      # 第二步：保存缓存（使用当日唯一key，避免冲突）
       - name: 保存签到状态缓存
         id: cache-save
-        if: always()  # 无论前面步骤结果如何，都强制保存最新文件
+        if: always()  # 无论前面步骤结果如何，都强制保存
         uses: actions/cache/save@v4
         with:
           path: .last_success_date
-          key: ${{ runner.os }}-quark-sign-${{ github.ref }}
+          # 核心修改：key加入当日日期，确保每天缓存唯一，避免冲突
+          key: ${{ runner.os }}-quark-sign-${{ github.ref }}-${{ github.run_date }}
 
-      # 修复：使用社区维护的有效Action清理旧记录
-      #- name: 清理旧的工作流记录
-      #  if: always()
-       # uses: GitRML/delete-workflow-runs@main
-       # with:
-       #   token: ${{ github.token }}
-       #   仓库: ${{ github.repository }}
-        #  retain_days: 0
-      #    keep_minimum_runs: 60
+      # 可选：清理旧缓存（如需）
+      #- name: 清理过期缓存
+      #  uses: actions/github-script@v7
+      #  with:
+      #    script: |
+      #      const cache = await github.rest.actions.getActionsCacheList({
+      #        owner: context.repo.owner,
+      #        repo: context.repo.repo,
+      #      });
+      #      const expiredCaches = cache.data.actions_caches.filter(c => 
+      #        c.key.startsWith('${{ runner.os }}-quark-sign-') && 
+      #        !c.key.includes('${{ github.run_date }}')
+      #      );
+      #      for (const c of expiredCaches) {
+      #        await github.rest.actions.deleteActionsCacheById({
+      #          owner: context.repo.owner,
+      #          repo: context.repo.repo,
+      #          cache_id: c.id
+      #        });
+      #      }
