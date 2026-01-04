@@ -15,15 +15,23 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      # 第一步：恢复缓存（优先读取当日缓存，再读历史缓存）
+      # 新增步骤：手动生成当日日期（替代失效的github.run_date）
+      - name: 生成当日日期
+        id: gen_date
+        run: |
+          export TZ='Asia/Shanghai'
+          current_date=$(date '+%Y-%m-%d')
+          echo "date_str=$current_date" >> "$GITHUB_OUTPUT"
+
+      # 第一步：恢复缓存（使用手动生成的日期，确保key唯一）
       - name: 恢复签到状态缓存
         id: cache-restore
         uses: actions/cache/restore@v4
         with:
           path: .last_success_date
-          # 核心修改：key加入当日日期，确保每天缓存唯一
-          key: ${{ runner.os }}-quark-sign-${{ github.ref }}-${{ github.run_date }}
-          # 降级读取：先读分支缓存，再读基础缓存
+          # 核心修改：用手动生成的日期替代github.run_date
+          key: ${{ runner.os }}-quark-sign-${{ github.ref }}-${{ steps.gen_date.outputs.date_str }}
+          # 降级读取：优先读带日期的key，再读历史key
           restore-keys: |
             ${{ runner.os }}-quark-sign-${{ github.ref }}-
             ${{ runner.os }}-quark-sign-
@@ -122,33 +130,13 @@ jobs:
             echo "✅ 缓存文件权限已设置"
           fi
 
-      # 第二步：保存缓存（使用当日唯一key，避免冲突）
+      # 第二步：保存缓存（核心修改：用手动日期+允许失败）
       - name: 保存签到状态缓存
         id: cache-save
-        if: always()  # 无论前面步骤结果如何，都强制保存
+        if: always()  # 无论前面步骤结果如何，都尝试保存
+        continue-on-error: true  # 即使保存失败，也不中断流程
         uses: actions/cache/save@v4
         with:
           path: .last_success_date
-          # 核心修改：key加入当日日期，确保每天缓存唯一，避免冲突
-          key: ${{ runner.os }}-quark-sign-${{ github.ref }}-${{ github.run_date }}
-
-      # 可选：清理旧缓存（如需）
-      #- name: 清理过期缓存
-      #  uses: actions/github-script@v7
-      #  with:
-      #    script: |
-      #      const cache = await github.rest.actions.getActionsCacheList({
-      #        owner: context.repo.owner,
-      #        repo: context.repo.repo,
-      #      });
-      #      const expiredCaches = cache.data.actions_caches.filter(c => 
-      #        c.key.startsWith('${{ runner.os }}-quark-sign-') && 
-      #        !c.key.includes('${{ github.run_date }}')
-      #      );
-      #      for (const c of expiredCaches) {
-      #        await github.rest.actions.deleteActionsCacheById({
-      #          owner: context.repo.owner,
-      #          repo: context.repo.repo,
-      #          cache_id: c.id
-      #        });
-      #      }
+          # 用手动生成的日期确保key唯一
+          key: ${{ runner.os }}-quark-sign-${{ github.ref }}-${{ steps.gen_date.outputs.date_str }}
