@@ -179,7 +179,7 @@ class Quark:
         return f"{b:.2f} {units[i]}"
 
     def _request(self, method, url, params=None, json=None):
-        """统一请求封装（补充关键请求头）"""
+        """统一请求封装（补充关键请求头 + 类型校验）"""
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "application/json, text/plain, */*",
@@ -219,25 +219,40 @@ class Quark:
             print(f"🔍 {self.user_name} 请求状态码: {resp.status_code} | URL: {url[:80]}")
             
             resp.raise_for_status()
-            result = resp.json()
+            # 强制校验响应是否为JSON，非JSON直接返回空字典
+            try:
+                result = resp.json()
+            except json.JSONDecodeError:
+                print(f"❌ {self.user_name} 响应非JSON格式: {resp.text[:100]}...")
+                return {}
+            
+            # 确保返回的是字典，且data字段为字典
+            if not isinstance(result, dict):
+                print(f"❌ {self.user_name} 响应不是字典类型: {type(result)}")
+                return {}
             
             if result.get("code") != 0 and not result.get("data"):
                 err_msg = result.get("message", result.get("msg", "未知错误"))
                 print(f"{self.user_name} 接口返回错误: {err_msg} | 响应码: {result.get('code')}")
-                return False
-            return result.get("data", {})
+                return {}
+            # 确保data字段是字典，否则返回空字典
+            data = result.get("data", {})
+            if not isinstance(data, dict):
+                print(f"❌ {self.user_name} data字段非字典类型: {type(data)} | 内容: {str(data)[:100]}...")
+                return {}
+            return data
         except requests.exceptions.HTTPError as e:
             print(f"{self.user_name} HTTP错误: {str(e)} | 状态码: {resp.status_code if 'resp' in locals() else '未知'}")
-            return False
+            return {}
         except requests.exceptions.RequestException as e:
             print(f"{self.user_name} 请求异常: {str(e)}")
-            return False
+            return {}
         except ValueError as e:
             print(f"{self.user_name} 响应解析异常: {str(e)} | 响应内容: {resp.text[:100] if 'resp' in locals() else '无'}")
-            return False
+            return {}
 
     def get_growth_info(self):
-        """获取用户成长/签到基础信息"""
+        """获取用户成长/签到基础信息（增加空值保护）"""
         url = "https://drive-m.quark.cn/1/clouddrive/capacity/growth/info"
         params = {
             "pr": "ucpro",
@@ -246,10 +261,12 @@ class Quark:
             "sign": self.param.get("sign"),
             "vcode": self.param.get("vcode")
         }
-        return self._request("get", url, params=params)
+        data = self._request("get", url, params=params)
+        # 确保返回的是字典
+        return data if isinstance(data, dict) else {}
 
     def get_growth_sign(self):
-        """执行签到操作"""
+        """执行签到操作（增加空值保护）"""
         url = "https://drive-m.quark.cn/1/clouddrive/capacity/growth/sign"
         params = {
             "pr": "ucpro",
@@ -259,29 +276,40 @@ class Quark:
             "vcode": self.param.get("vcode")
         }
         data = {"sign_cyclic": True}
-        return self._request("post", url, params=params, json=data)
+        result = self._request("post", url, params=params, json=data)
+        # 确保返回的是字典
+        return result if isinstance(result, dict) else {}
 
     def queryBalance(self):
-        """查询抽奖余额"""
+        """查询抽奖余额（修复类型错误核心点）"""
         url = "https://coral2.quark.cn/currency/v1/queryBalance"
         params = {
             "moduleCode": "1f3563d38896438db994f118d4ff53cb",
             "kps": self.param.get("kps")
         }
         result = self._request("get", url, params=params)
-        return result.get("balance", "0") if result else "查询失败"
+        # 先校验result是否为字典，再调用get方法
+        if isinstance(result, dict):
+            return result.get("balance", "0")
+        else:
+            print(f"⚠️ {self.user_name} 抽奖余额查询返回非字典类型: {type(result)}")
+            return "查询失败"
 
     def do_sign(self):
-        """执行完整签到流程（无需缓存检查）"""
+        """执行完整签到流程（全链路类型校验）"""
         log = [f"\n📱 {self.user_name}"]
         
         growth_info = self.get_growth_info()
+        # 空字典直接判定为失败
         if not growth_info:
-            log.append("❌ 获取签到基础信息失败（Cookie可能已失效/参数错误）")
+            log.append("❌ 获取签到基础信息失败（Cookie可能已失效/参数错误/接口返回异常）")
             return "\n".join(log), False
         
+        # 所有get调用前先确保是字典
         total_cap = self.convert_bytes(growth_info.get("total_capacity", 0))
         cap_composition = growth_info.get("cap_composition", {}) or {}
+        if not isinstance(cap_composition, dict):
+            cap_composition = {}
         sign_reward = cap_composition.get("sign_reward", 0)
         sign_reward_str = self.convert_bytes(sign_reward)
         is_88vip = "88VIP用户" if growth_info.get("88VIP") else "普通用户"
@@ -289,11 +317,14 @@ class Quark:
         log.append(f"🔍 {is_88vip} | 总容量: {total_cap} | 签到累计: {sign_reward_str}")
         
         cap_sign = growth_info.get("cap_sign", {}) or {}
+        if not isinstance(cap_sign, dict):
+            cap_sign = {}
+        
         if cap_sign.get("sign_daily"):
             daily_reward = self.convert_bytes(cap_sign.get("sign_daily_reward", 0))
             progress = f"{cap_sign.get('sign_progress', 0)}/{cap_sign.get('sign_target', 0)}"
             log.append(f"✅ 接口验证今日已签到 | 获得: {daily_reward} | 连签进度: {progress}")
-            # 查询抽奖余额（修复原代码位置错误）
+            # 查询抽奖余额
             balance = self.queryBalance()
             log.append(f"🎁 抽奖余额: {balance}")
             return "\n".join(log), True
@@ -346,6 +377,9 @@ def main():
                 if "=" in item:
                     key, value = item.split("=", 1)
                     user_data[key.strip()] = value.strip()
+            # 校验user_data是否为字典且非空
+            if not isinstance(user_data, dict) or not user_data:
+                raise ValueError("账号参数解析后非有效字典")
             
             quark = Quark(user_data, idx)
             sign_log, sign_success = quark.do_sign()
