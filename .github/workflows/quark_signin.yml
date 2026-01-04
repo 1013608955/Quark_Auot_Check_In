@@ -13,14 +13,14 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: 恢复签到状态缓存
+      - name: 恢复/保存签到状态缓存
         id: cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4  # 关键：升级到v4以支持save-always参数
         with:
           path: .last_success_date
           key: ${{ runner.os }}-quark-sign-${{ github.ref }}
           restore-keys: ${{ runner.os }}-quark-sign-${{ github.ref }}-
-          save-always: true  # 关键：始终保存缓存，确保最新日期被持久化
+          save-always: true  # v4生效：无论缓存是否命中，始终保存最新文件
 
       - name: 检查是否已签到
         id: check_sign
