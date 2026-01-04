@@ -13,14 +13,14 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: 恢复/保存签到状态缓存
-        id: cache
-        uses: actions/cache@v4  # 关键：升级到v4以支持save-always参数
+      # 第一步：仅恢复缓存（废弃原合写的cache步骤）
+      - name: 恢复签到状态缓存
+        id: cache-restore
+        uses: actions/cache/restore@v4
         with:
           path: .last_success_date
           key: ${{ runner.os }}-quark-sign-${{ github.ref }}
           restore-keys: ${{ runner.os }}-quark-sign-${{ github.ref }}-
-          save-always: true  # v4生效：无论缓存是否命中，始终保存最新文件
 
       - name: 检查是否已签到
         id: check_sign
@@ -116,9 +116,18 @@ jobs:
             echo "✅ 缓存文件权限已设置"
           fi
 
+      # 第二步：强制保存缓存（核心修复：无论是否命中，都保存最新文件）
+      - name: 保存签到状态缓存
+        id: cache-save
+        if: always()  # 无论前面步骤成功/失败，都保存
+        uses: actions/cache/save@v4
+        with:
+          path: .last_success_date
+          key: ${{ runner.os }}-quark-sign-${{ github.ref }}
+
       - name: 清理旧的工作流记录
         if: always()
-        uses: Mattraks/delete-workflow-runs@main
+        uses: actions/delete-workflow-runs@main  # 替换废弃的Mattraks/delete-workflow-runs
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
