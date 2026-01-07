@@ -87,7 +87,7 @@ def parse_cookie_from_url(url_str):
         sign = unquote(sign).replace(" ", "+") if sign else ''
         vcode = unquote(vcode) if vcode else ''
         
-        print(f"✅ 解析后的参数: kps={kps} | sign={sign} | vcode={vcode}")
+        # print(f"✅ 解析后的参数: kps={kps} | sign={sign} | vcode={vcode}")
         
         if not all([kps, sign, vcode]):
             raise ValueError(f"URL中缺失关键参数 | kps={bool(kps)} | sign={bool(sign)} | vcode={bool(vcode)}")
