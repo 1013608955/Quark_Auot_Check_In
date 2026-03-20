@@ -340,9 +340,8 @@ class Quark:
                     updated_total_cap = self.convert_bytes(updated_info.get("total_capacity", 0))
                     updated_cap_composition = updated_info.get("cap_composition", {}) or {}
                     updated_sign_reward = self.convert_bytes(updated_cap_composition.get("sign_reward", 0))
-                    # 替换第一行中的总容量和签到累计为最新值
-                    log[0] = f"📱 {self.user_name}"
-                    log.insert(1, f"🔍 普通用户 | 总容量: {updated_total_cap} | 签到累计: {updated_sign_reward}")
+                    # 替换第二行中的总容量和签到累计为最新值（不新增行）
+                    log[1] = f"🔍 {is_88vip} | 总容量: {updated_total_cap} | 签到累计: {updated_sign_reward}"
                 # 查询抽奖余额
                 balance = self.queryBalance()
                 log.append(f"🎁 抽奖余额: {balance}")
