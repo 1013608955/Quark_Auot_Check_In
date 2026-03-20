@@ -334,6 +334,15 @@ class Quark:
                 reward = self.convert_bytes(sign_result.get("sign_daily_reward", 0))
                 progress = f"{cap_sign.get('sign_progress', 0)+1}/{cap_sign.get('sign_target', 0)}"
                 log.append(f"✅ 签到成功 | 获得: {reward} | 连签进度: {progress}")
+                # 修复：重新获取最新的容量信息，确保显示签到后的当前值
+                updated_info = self.get_growth_info()
+                if updated_info:
+                    updated_total_cap = self.convert_bytes(updated_info.get("total_capacity", 0))
+                    updated_cap_composition = updated_info.get("cap_composition", {}) or {}
+                    updated_sign_reward = self.convert_bytes(updated_cap_composition.get("sign_reward", 0))
+                    # 替换第一行中的总容量和签到累计为最新值
+                    log[0] = f"📱 {self.user_name}"
+                    log.insert(1, f"🔍 普通用户 | 总容量: {updated_total_cap} | 签到累计: {updated_sign_reward}")
                 # 查询抽奖余额
                 balance = self.queryBalance()
                 log.append(f"🎁 抽奖余额: {balance}")
