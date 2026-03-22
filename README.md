@@ -50,14 +50,24 @@
 
 1. 打开手机抓包工具，访问夸克网盘签到页。
 2. 找到接口 `https://drive-m.quark.cn/1/clouddrive/capacity/growth/info` 的请求信息。
-3. 复制请求中的参数：kps、sign 和 vcode。
-4. 将参数整理为以下格式：
-   ```
-   user=张三; kps=abcdefg; sign=hijklmn; vcode=111111111;
-   ```
+3. **推荐方式**：直接复制该请求的完整 URL（包含 `kps`、`sign`、`vcode` 参数）。
+4. **或手动整理参数**：复制请求中的 `kps`、`sign` 和 `vcode` 参数。
 
-   > `user` 字段为用户名，可随意填写。多个账号可用 **回车或 && 字符分隔**。
-   >
+#### 🔒 配置格式说明
+
+将获取到的信息整理为以下两种格式之一（推荐方式一）：
+
+**方式一：直接粘贴抓包的完整 URL（推荐，脚本自动解析）**
+https://drive-m.quark.cn/1/clouddrive/capacity/growth/info?kps=xxx&sign=xxx&vcode=xxx
+plaintext
+
+**方式二：手动整理参数**
+kps=abcdefg; sign=hijklmn; vcode=111111111;
+plaintext
+
+> 注意：
+> - 方式二中无需填写 `user` 字段，脚本会自动按顺序编号。
+> - **多账号配置**：多个账号可用 **换行符 `\n`** 或 **`&&`** 分隔。
 
 #### 🔐 添加到 GitHub Secrets
 
