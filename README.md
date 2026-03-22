@@ -59,7 +59,6 @@
 
 **方式一：直接粘贴抓包的完整 URL（推荐，脚本自动解析）**
 https://drive-m.quark.cn/1/clouddrive/capacity/growth/info?kps=xxx&sign=xxx&vcode=xxx
-plaintext
 
 **方式二：手动整理参数**
 kps=abcdefg; sign=hijklmn; vcode=111111111;
