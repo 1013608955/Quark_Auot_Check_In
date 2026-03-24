@@ -3,7 +3,7 @@ import re
 import sys
 import json
 import requests
-from urllib.parse import quote, urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote
 from datetime import datetime
 from zoneinfo import ZoneInfo  # Python 3.9+ 内置时区支持
 
@@ -14,7 +14,6 @@ from zoneinfo import ZoneInfo  # Python 3.9+ 内置时区支持
 # =====================================================
 
 USER_AGENT = "Mozilla/5.0 (Linux; Android 13; SM-G9980 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.130 Mobile Safari/537.36 Quark/10.1.2.973"
-QUARK_COOKIE = ""
 
 CACHE_FILE = os.path.join(os.getcwd(), ".last_success_date")
 BEIJING_TZ = ZoneInfo('Asia/Shanghai')
@@ -168,7 +167,8 @@ class Quark:
         if missing:
             raise ValueError(f"{self.user_name} 缺失必要参数: {','.join(missing)}")
 
-    def convert_bytes(self, b):
+    @staticmethod
+    def convert_bytes(b):
         """字节单位转换"""
         try:
             b = float(b)
@@ -190,8 +190,6 @@ class Quark:
             "Referer": "https://drive-m.quark.cn/",
             "Connection": "keep-alive",
         }
-        if QUARK_COOKIE:
-            headers["Cookie"] = QUARK_COOKIE
 
         try:
             if method.lower() == "get":
@@ -234,44 +232,36 @@ class Quark:
             print(f"{self.user_name} 响应解析异常: {str(e)} | 响应内容: {resp.text[:100] if 'resp' in locals() else '无'}")
             return {}
 
-    def get_growth_info(self):
-        """获取用户成长/签到基础信息（增加空值保护）"""
-        url = "https://drive-m.quark.cn/1/clouddrive/capacity/growth/info"
-        params = {
+    def _api_params(self):
+        """构建夸克 API 公共参数"""
+        return {
             "pr": "ucpro",
             "fr": "android",
             "kps": self.param.get("kps"),
             "sign": self.param.get("sign"),
-            "vcode": self.param.get("vcode")
+            "vcode": self.param.get("vcode"),
         }
-        data = self._request("get", url, params=params)
-        # 确保返回的是字典
+
+    def get_growth_info(self):
+        """获取用户成长/签到基础信息"""
+        url = "https://drive-m.quark.cn/1/clouddrive/capacity/growth/info"
+        data = self._request("get", url, params=self._api_params())
         return data if isinstance(data, dict) else {}
 
     def get_growth_sign(self):
-        """执行签到操作（增加空值保护）"""
+        """执行签到操作"""
         url = "https://drive-m.quark.cn/1/clouddrive/capacity/growth/sign"
-        params = {
-            "pr": "ucpro",
-            "fr": "android",
-            "kps": self.param.get("kps"),
-            "sign": self.param.get("sign"),
-            "vcode": self.param.get("vcode")
-        }
-        data = {"sign_cyclic": True}
-        result = self._request("post", url, params=params, json=data)
-        # 确保返回的是字典
+        result = self._request("post", url, params=self._api_params(), json={"sign_cyclic": True})
         return result if isinstance(result, dict) else {}
 
-    def queryBalance(self):
-        """查询抽奖余额（修复类型错误核心点）"""
-        url = "https://coral2.quark.cn/currency/v1/queryBalance"
+    def query_balance(self):
+        """查询抽奖余额"""
+        url = "https://coral2.quark.cn/currency/v1/query_balance"
         params = {
             "moduleCode": "1f3563d38896438db994f118d4ff53cb",
             "kps": self.param.get("kps")
         }
         result = self._request("get", url, params=params)
-        # 先校验result是否为字典，再调用get方法
         if isinstance(result, dict):
             return result.get("balance", "0")
         else:
@@ -308,7 +298,7 @@ class Quark:
             progress = f"{cap_sign.get('sign_progress', 0)}/{cap_sign.get('sign_target', 0)}"
             log.append(f"✅ 接口验证今日已签到 | 获得: {daily_reward} | 连签进度: {progress}")
             # 查询抽奖余额
-            balance = self.queryBalance()
+            balance = self.query_balance()
             log.append(f"🎁 抽奖余额: {balance}")
             return "\n".join(log), True
         else:
@@ -326,7 +316,7 @@ class Quark:
                     # 替换第二行中的总容量和签到累计为最新值（不新增行）
                     log[1] = f"🔍 {is_88vip} | 总容量: {updated_total_cap} | 签到累计: {updated_sign_reward}"
                 # 查询抽奖余额
-                balance = self.queryBalance()
+                balance = self.query_balance()
                 log.append(f"🎁 抽奖余额: {balance}")
                 return "\n".join(log), True
             else:
@@ -348,12 +338,15 @@ def write_success_date():
 
 def main():
     """主执行函数（输出状态给Workflow）"""
+    now = datetime.now(BEIJING_TZ)
+    time_str = now.strftime('%Y-%m-%d %H:%M:%S')
+
     print("="*50)
     print("---------- 夸克网盘自动签到开始 ----------")
-    print(f"执行时间: {datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')} (北京时间)")
+    print(f"执行时间: {time_str} (北京时间)")
     print("="*50)
-    
-    final_msg = [f"夸克网盘签到结果汇总（{datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')} 北京时间）:"]
+
+    final_msg = [f"夸克网盘签到结果汇总（{time_str} 北京时间）:"]
     overall_success = True
     
     cookie_list = get_env()
@@ -402,7 +395,6 @@ def main():
 
 if __name__ == "__main__":
     os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
-    os.environ.setdefault('REQUESTS_CA_BUNDLE', '')
     
     try:
         main()
