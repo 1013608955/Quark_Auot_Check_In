@@ -54,7 +54,12 @@ def send_wpush(title, content):
             headers={"Content-Type": "application/json", "User-Agent": "QuarkSign/1.0"},
             timeout=15
         )
-        result = resp.json()
+        # 清理响应中的非JSON前缀字符（如BOM、$等）
+        text = resp.text
+        json_start = text.find('{')
+        if json_start > 0:
+            text = text[json_start:]
+        result = json.loads(text)
         if result.get("code") == 0:
             print("✅ WPush推送成功")
         else:
