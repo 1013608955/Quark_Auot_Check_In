@@ -6,14 +6,16 @@ on:
     - cron: '0 5 * * *'   # 北京时间 13:00 (UTC+8)
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   sign-in:
-    permissions:
-      actions: write  # 赋予缓存操作必要权限
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # 新增步骤：手动生成当日日期（替代失效的github.run_date）
       - name: 生成当日日期
@@ -77,15 +79,14 @@ jobs:
 
       - name: 设置Python环境（仅未签到时执行）
         if: steps.check_sign.outputs.skip == 'false'
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
       - name: 安装依赖（仅未签到时执行）
         if: steps.check_sign.outputs.skip == 'false'
         run: |
-          pip install requests pytz
-          pip list | grep -E "requests|pytz"  # 验证依赖安装
+          pip install requests
 
       - name: 执行签到脚本（仅未签到时执行）
         id: run_script
