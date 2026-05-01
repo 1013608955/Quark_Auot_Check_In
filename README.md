@@ -88,10 +88,9 @@ kps=ccc; sign=ddd; vcode=222;
 | Secret 名称 | 说明 | 示例 |
 |------------|------|------|
 | `COOKIE_QUARK` | 夸克 Cookie（必填） | `kps=xxx; sign=xxx; vcode=xxx;` 或完整 URL |
-| `USERS` | 推送通知用户名（可选） | `张三` |
-| `BOT_TOKEN` | 推送通知 Token（可选） | `tcp://xxx` |
+| `WPUSH_KEY` | wpush.cn 推送 Token（可选） | `WPUSH_xxxxxxxx` |
 
-> `USERS` 和 `BOT_TOKEN` 用于签到结果推送通知，不填也能正常运行签到。
+> `WPUSH_KEY` 用于签到结果推送到微信/APP，不填也能正常运行签到。
 
 ---
 
