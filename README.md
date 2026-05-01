@@ -1,6 +1,6 @@
 # ⭐️ 夸克网盘自动签到
 
-![GitHub stars](https://img.shields.io/github/stars/Liu8Can/Quark_Auot_Check_In) ![GitHub forks](https://img.shields.io/github/forks/Liu8Can/Quark_Auot_Check_In) ![License](https://img.shields.io/github/license/Liu8Can/Quark_Auot_Check_In) ![Last Commit](https://img.shields.io/github/last-commit/Liu8Can/Quark_Auot_Check_In) ![GitHub Actions](https://github.com/Liu8Can/Quark_Auot_Check_In/actions/workflows/quark_signin.yml/badge.svg)
+![GitHub stars](https://img.shields.io/github/stars/Liu8Can/Quark_Auot_Check_In) ![GitHub forks](https://img.shields.io/github/forks/Liu8Can/Quark_Auot_Check_In) ![License](https://img.shields.io/github/license/Liu8Can/Quark_Auot_Check_In) ![Last Commit](https://img.shields.io/github/last-commit/Liu8Can/Quark_Auot_Check_In) ![GitHub Actions](https://github.com/1013608955/Quark_Auot_Check_In/actions/workflows/quark_signin.yml/badge.svg)
 
 ★ 已修复：签到成功后显示最新总容量和签到累计值。
 
@@ -25,7 +25,7 @@
   - **新增：每日两次签到尝试**：分别在北京时间早上 9 点和下午 1 点左右尝试签到，增加成功率。
   - **新增：防止重复签到**：脚本会记录当日成功签到状态，避免不必要的重复执行。
   - **新增：随机延迟执行**：每次签到前加入随机延迟，模拟人工操作，降低被检测风险。
-- **GitHub Actions 托管**：一键配置后，脚本每天自动运行，实现真正的“一勤永利”。
+- **GitHub Actions 托管**：一键配置后，脚本每天自动运行，实现真正的"一勤永利"。
   - **新增：自动保持仓库活跃**：通过空提交防止 GitHub因仓库不活跃而禁用 Actions。
   - **新增：自动清理旧记录**：自动删除旧的 Workflow 运行记录，保持 Actions 页面整洁。
 - 本项目基于 BNDou大佬的项目中夸克网盘自动签到的子功能 https://github.com/BNDou/Auto_Check_In 修改而来
@@ -58,22 +58,40 @@
 将获取到的信息整理为以下两种格式之一（推荐方式一）：
 
 **方式一：直接粘贴抓包的完整 URL（推荐，脚本自动解析）**
+```
 https://drive-m.quark.cn/1/clouddrive/capacity/growth/info?kps=xxx&sign=xxx&vcode=xxx
+```
 
 **方式二：手动整理参数**
+```
 kps=abcdefg; sign=hijklmn; vcode=111111111;
-plaintext
+```
+
+**多账号配置**：多个账号可用 **换行符 `\n`** 或 **`&&`** 分隔，例如：
+```
+kps=aaa; sign=bbb; vcode=111;
+kps=ccc; sign=ddd; vcode=222;
+```
+
+方式一多账号同理，每行一个完整 URL 即可。
 
 > 注意：
 > - 方式二中无需填写 `user` 字段，脚本会自动按顺序编号。
-> - **多账号配置**：多个账号可用 **换行符 `\n`** 或 **`&&`** 分隔。
+> - Cookie 有效期有限，过期后需重新抓取。建议设置提醒定期更新。
 
 #### 🔐 添加到 GitHub Secrets
 
-1. 打开 Fork 后的仓库，进入 **Settings -> Secrets and variables -> Actions**。
+1. 打开 Fork 后的仓库，进入 **Settings → Secrets and variables → Actions**。
 2. 点击 **Repository secrets** 区域下的 **New repository secret** 按钮。
-3. 创建命名为 `COOKIE_QUARK` 的 Secret。
-4. 将整理好的 Cookie 信息粘贴到 "Secret" 输入框中并保存。
+3. 创建以下 Secrets：
+
+| Secret 名称 | 说明 | 示例 |
+|------------|------|------|
+| `COOKIE_QUARK` | 夸克 Cookie（必填） | `kps=xxx; sign=xxx; vcode=xxx;` 或完整 URL |
+| `USERS` | 推送通知用户名（可选） | `张三` |
+| `BOT_TOKEN` | 推送通知 Token（可选） | `tcp://xxx` |
+
+> `USERS` 和 `BOT_TOKEN` 用于签到结果推送通知，不填也能正常运行签到。
 
 ---
 
@@ -81,13 +99,13 @@ plaintext
 
 1. 打开 Fork 后的仓库，进入 **Actions** 选项卡。如果看到黄色的提示条 "Workflows aren't right ....... enable them"，点击 **"I understand my workflows, go ahead and enable them"** 按钮启用 Actions。
 2. **重要：设置 Workflow 权限**
-   * 进入仓库的 **Settings -> Actions -> General** 页面。
+   * 进入仓库的 **Settings → Actions → General** 页面。
    * 在 "Workflow permissions" 部分，选择 **"Read and write permissions"**。
    * 点击 "Save" 保存。
-   * **此步骤是必需的**，以便 Actions 能够执行“保持仓库活跃”（空提交）和“清理旧的工作流记录”等操作。
+   * **此步骤是必需的**，以便 Actions 能够执行"保持仓库活跃"（空提交）和"清理旧的工作流记录"等操作。
 3. 启用后，你会看到命名为 `Quark签到` (or `Quark Sign-in`) 的工作流已配置完成。
 4. 脚本将按预设时间（北京时间每日约 9:00 和 13:00）自动运行。
-   * **运行时间说明**：默认设置在北京时间上午 9 点和下午 1 点左叶运行。由于 GitHub Actions 的计划任务调度机制，实际运行时间可能会有几分钟到几十分钟的延迟，这是正常现象。随机延迟的加入些也会影响确切的启动时间。
+   * **运行时间说明**：默认设置在北京时间上午 9 点和下午 1 点左右运行。由于 GitHub Actions 的计划任务调度机制，实际运行时间可能会有几分钟到几十分钟的延迟，这是正常现象。随机延迟的加入些也会影响确切的启动时间。
    * **执行逻辑**：脚本会先检查当天是否已成功签到。如果已签到，则跳过后续的签到操作。
 
 ### 4️⃣ 手动测试运行
@@ -101,18 +119,22 @@ plaintext
 ## ❓ 常见问题
 
 1. **签到失败**：
-
    * 确认 `COOKIE_QUARK` Secret 中的信息准确无误且格式正确。
    * Cookie 可能已过期，请尝试重新抓取并更新 Secret。
    * 检查 Actions 日志，看是否有具体的错误信息。
-2. **GitHub Actions 未生效或报错 `Permission denied` / `GH006`：
 
+2. **GitHub Actions 未生效或报错 `Permission denied` / `GH006`**：
    * 确保已按照【3️⃣ 启用 GitHub Actions 及设置权限】中的步骤启用了 Actions。
-   * **最常见原因：**确保在仓库的 "Settings -> Actions -> General" 中，"Workflow permissions" 已设置为 **"读取和写入权限"**。如果权限不足，空提交和清理记录步骤会失败。
+   * **最常见原因：**确保在仓库的 "Settings → Actions → General" 中，"Workflow permissions" 已设置为 **"读取和写入权限"**。如果权限不足，空提交和清理记录步骤会失败。
    * 检查 Actions 运行日志，查看具体的错误信息。
-3. **Workflow 显示跳过 (Skipped)**：
 
+3. **Workflow 显示跳过 (Skipped)**：
    * 这是新版功能的正常行为。如果当天的第一次签到尝试（例如上午9点的任务）已经成功，那么下午1点的任务在检查时会发现已签到，从而跳过实际的签到步骤。你可以在 `check-if-already-signed` job 的日志中看到类似 "今天已成功签到，跳过执行" 的信息。
+
+4. **日志中出现 404 错误（`coral2.quark.cn/currency/v1/query_balance`）**：
+   * 这个接口用于查询夸克"抽奖余额"（积分/金币），**不影响签到本身**。
+   * 404 表示该账号没有抽奖功能 / 接口地址变更 / 该账号类型不支持此接口。
+   * 脚本已做容错处理（显示 `抽奖余额: 0`），签到核心接口（`growth/info`、`growth/sign`）返回 200 即为成功。
 
 ---
 
