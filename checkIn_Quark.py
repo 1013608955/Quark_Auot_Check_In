@@ -4,6 +4,7 @@ import sys
 import json
 import requests
 from urllib.parse import urlparse, parse_qs, unquote
+from urllib3.util.retry import Retry
 from datetime import datetime
 from zoneinfo import ZoneInfo  # Python 3.9+ 内置时区支持
 
@@ -20,7 +21,14 @@ BEIJING_TZ = ZoneInfo('Asia/Shanghai')
 
 # 全局共享 Session（连接复用，减少 TLS 握手开销）
 _http = requests.Session()
-_http.mount('https://', requests.adapters.HTTPAdapter(max_retries=3))
+_retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["HEAD", "GET", "POST", "OPTIONS"],
+    raise_on_status=False,
+)
+_http.mount('https://', requests.adapters.HTTPAdapter(max_retries=_retry_strategy))
 _http.headers.update({
     "User-Agent": USER_AGENT,
     "Accept": "application/json, text/plain, */*",
