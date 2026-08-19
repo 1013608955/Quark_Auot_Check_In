@@ -36,6 +36,11 @@ _http.headers.update({
     "Accept-Encoding": "gzip, deflate, br",
 })
 
+def _mask_credential(text):
+    """对包含 kps/sign/vcode 的凭据片段做脱敏，避免日志泄漏明文"""
+    return re.sub(r'(kps|sign|vcode)=[^&;\s]+', r'\1=***', text, flags=re.IGNORECASE)
+
+
 def send_wpush(title, content):
     """适配WPush官方v1接口的推送实现"""
     wpush_key = os.getenv("WPUSH_KEY")
@@ -113,7 +118,7 @@ def parse_cookie_from_url(url_str):
 
         return {"kps": kps, "sign": sign, "vcode": vcode}
     except Exception as e:
-        print(f"❌ URL解析失败: {str(e)} | URL: {url_str[:80]}...")
+        print(f"❌ URL解析失败: {str(e)} | URL: {_mask_credential(url_str)[:80]}...")
         return None
 
 def get_env():
@@ -122,14 +127,14 @@ def get_env():
         err_msg = "❌ 未添加COOKIE_QUARK仓库变量"
         print(err_msg)
         send_wpush("夸克自动签到", err_msg)
-        sys.exit(0)
+        sys.exit(1)
 
     cookie_raw = os.environ.get("COOKIE_QUARK", "").strip()
     if not cookie_raw:
         err_msg = "❌ COOKIE_QUARK变量值为空"
         print(err_msg)
         send_wpush("夸克自动签到", err_msg)
-        sys.exit(0)
+        sys.exit(1)
 
     raw_list = re.split(r'\n|\&\&', cookie_raw)
     cookie_list = []
@@ -144,13 +149,13 @@ def get_env():
         if parsed and isinstance(parsed, dict):
             cookie_list.append(parsed)
         else:
-            print(f"⚠️  第{idx}个账号解析失败，跳过 | 内容: {item[:50]}...")
+            print(f"⚠️  第{idx}个账号解析失败，跳过 | 内容: {_mask_credential(item)[:30]}...")
 
     if not cookie_list:
         err_msg = "❌ COOKIE_QUARK解析后无有效账号，请检查URL格式"
         print(err_msg)
         send_wpush("夸克自动签到", err_msg)
-        sys.exit(0)
+        sys.exit(1)
 
     print(f"✅ 成功解析{len(cookie_list)}个有效账号")
     return cookie_list
@@ -192,18 +197,24 @@ class Quark:
             i += 1
         return f"{b:.2f} {units[i]}"
 
-    def _request(self, method, url, params=None, json=None):
+    @staticmethod
+    def _as_dict(value):
+        """将可能为 None/非 dict 的字段安全转为 dict"""
+        return value if isinstance(value, dict) else {}
+
+    def _request(self, method, url, params=None, json_body=None):
         """统一请求封装（使用全局 Session 复用连接）"""
         headers = {
             "Referer": "https://drive-m.quark.cn/",
             "Connection": "keep-alive",
         }
 
+        resp = None
         try:
             if method.lower() == "get":
                 resp = _http.get(url, params=params, headers=headers, timeout=20)
             elif method.lower() == "post":
-                resp = _http.post(url, params=params, json=json, headers=headers, timeout=20)
+                resp = _http.post(url, params=params, json=json_body, headers=headers, timeout=20)
             else:
                 raise ValueError(f"不支持的请求方法: {method}")
 
@@ -220,7 +231,9 @@ class Quark:
                 print(f"❌ {self.user_name} 响应不是字典类型: {type(result)}")
                 return {}
 
-            if result.get("code") != 0 and not result.get("data"):
+            # 业务层错误：code != 0 一律视为失败，不依赖 data 是否存在
+            # （避免“code!=0 但响应带 data”的错误响应被误判为成功并写入缓存）
+            if result.get("code") != 0:
                 err_msg = result.get("message", result.get("msg", "未知错误"))
                 print(f"{self.user_name} 接口返回错误: {err_msg} | 响应码: {result.get('code')}")
                 return {}
@@ -231,13 +244,13 @@ class Quark:
                 return {}
             return data
         except requests.exceptions.HTTPError as e:
-            print(f"{self.user_name} HTTP错误: {str(e)} | 状态码: {resp.status_code if 'resp' in locals() else '未知'}")
+            print(f"{self.user_name} HTTP错误: {str(e)} | 状态码: {resp.status_code if resp else '未知'}")
             return {}
         except requests.exceptions.RequestException as e:
             print(f"{self.user_name} 请求异常: {str(e)}")
             return {}
         except ValueError as e:
-            print(f"{self.user_name} 响应解析异常: {str(e)} | 响应内容: {resp.text[:100] if 'resp' in locals() else '无'}")
+            print(f"{self.user_name} 响应解析异常: {str(e)} | 响应内容: {resp.text[:100] if resp else '无'}")
             return {}
 
     def _api_params(self):
@@ -253,14 +266,12 @@ class Quark:
     def get_growth_info(self):
         """获取用户成长/签到基础信息"""
         url = "https://drive-m.quark.cn/1/clouddrive/capacity/growth/info"
-        data = self._request("get", url, params=self._api_params())
-        return data if isinstance(data, dict) else {}
+        return self._request("get", url, params=self._api_params())
 
     def get_growth_sign(self):
         """执行签到操作"""
         url = "https://drive-m.quark.cn/1/clouddrive/capacity/growth/sign"
-        result = self._request("post", url, params=self._api_params(), json={"sign_cyclic": True})
-        return result if isinstance(result, dict) else {}
+        return self._request("post", url, params=self._api_params(), json_body={"sign_cyclic": True})
 
     def query_balance(self):
         """查询抽奖余额"""
@@ -270,11 +281,9 @@ class Quark:
             "kps": self.param.get("kps")
         }
         result = self._request("get", url, params=params)
-        if isinstance(result, dict):
-            return result.get("balance", "0")
-        else:
-            print(f"⚠️ {self.user_name} 抽奖余额查询返回非字典类型: {type(result)}")
+        if not result:
             return "查询失败"
+        return result.get("balance", "0")
 
     def do_sign(self):
         """执行完整签到流程（全链路类型校验）"""
@@ -288,19 +297,15 @@ class Quark:
         
         # 所有get调用前先确保是字典
         total_cap = self.convert_bytes(growth_info.get("total_capacity", 0))
-        cap_composition = growth_info.get("cap_composition", {}) or {}
-        if not isinstance(cap_composition, dict):
-            cap_composition = {}
+        cap_composition = self._as_dict(growth_info.get("cap_composition"))
         sign_reward = cap_composition.get("sign_reward", 0)
         sign_reward_str = self.convert_bytes(sign_reward)
         is_88vip = "88VIP用户" if growth_info.get("88VIP") else "普通用户"
         
         log.append(f"🔍 {is_88vip} | 总容量: {total_cap} | 签到累计: {sign_reward_str}")
         
-        cap_sign = growth_info.get("cap_sign", {}) or {}
-        if not isinstance(cap_sign, dict):
-            cap_sign = {}
-        
+        cap_sign = self._as_dict(growth_info.get("cap_sign"))
+
         if cap_sign.get("sign_daily"):
             daily_reward = self.convert_bytes(cap_sign.get("sign_daily_reward", 0))
             progress = f"{cap_sign.get('sign_progress', 0)}/{cap_sign.get('sign_target', 0)}"
@@ -319,7 +324,7 @@ class Quark:
                 updated_info = self.get_growth_info()
                 if updated_info:
                     updated_total_cap = self.convert_bytes(updated_info.get("total_capacity", 0))
-                    updated_cap_composition = updated_info.get("cap_composition", {}) or {}
+                    updated_cap_composition = self._as_dict(updated_info.get("cap_composition"))
                     updated_sign_reward = self.convert_bytes(updated_cap_composition.get("sign_reward", 0))
                     # 替换第二行中的总容量和签到累计为最新值（不新增行）
                     log[1] = f"🔍 {is_88vip} | 总容量: {updated_total_cap} | 签到累计: {updated_sign_reward}"

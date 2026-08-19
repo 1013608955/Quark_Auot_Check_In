@@ -1,6 +1,6 @@
 # ⭐️ 夸克网盘自动签到
 
-![GitHub stars](https://img.shields.io/github/stars/Liu8Can/Quark_Auot_Check_In) ![GitHub forks](https://img.shields.io/github/forks/Liu8Can/Quark_Auot_Check_In) ![License](https://img.shields.io/github/license/Liu8Can/Quark_Auot_Check_In) ![Last Commit](https://img.shields.io/github/last-commit/Liu8Can/Quark_Auot_Check_In) ![GitHub Actions](https://github.com/1013608955/Quark_Auot_Check_In/actions/workflows/quark_signin.yml/badge.svg)
+![GitHub stars](https://img.shields.io/github/stars/1013608955/Quark_Auot_Check_In) ![GitHub forks](https://img.shields.io/github/forks/1013608955/Quark_Auot_Check_In) ![License](https://img.shields.io/github/license/1013608955/Quark_Auot_Check_In) ![Last Commit](https://img.shields.io/github/last-commit/1013608955/Quark_Auot_Check_In) ![GitHub Actions](https://github.com/1013608955/Quark_Auot_Check_In/actions/workflows/quark_signin.yml/badge.svg)
 
 ★ 已修复：签到成功后显示最新总容量和签到累计值。
 
@@ -26,11 +26,10 @@
   - **新增：防止重复签到**：脚本会记录当日成功签到状态，避免不必要的重复执行。
   - **新增：随机延迟执行**：每次签到前加入随机延迟，模拟人工操作，降低被检测风险。
 - **GitHub Actions 托管**：一键配置后，脚本每天自动运行，实现真正的"一勤永利"。
-  - **新增：自动保持仓库活跃**：通过空提交防止 GitHub因仓库不活跃而禁用 Actions。
-  - **新增：自动清理旧记录**：自动删除旧的 Workflow 运行记录，保持 Actions 页面整洁。
+  - **新增：自动保持仓库活跃**：通过 `heartbeat` 分支的空提交工作流防止 GitHub 因仓库不活跃而禁用 Actions。
 - 本项目基于 BNDou大佬的项目中夸克网盘自动签到的子功能 https://github.com/BNDou/Auto_Check_In 修改而来
 - 感谢  [Spectrollay](https://github.com/Spectrollay) 对工作流的优化
-- 感谢  [haozihong ](https://github.com/Spectrollay) 对工作流的优化
+- 感谢  [haozihong](https://github.com/haozihong) 对工作流的优化
 
 ---
 
@@ -101,7 +100,7 @@ kps=ccc; sign=ddd; vcode=222;
    * 进入仓库的 **Settings → Actions → General** 页面。
    * 在 "Workflow permissions" 部分，选择 **"Read and write permissions"**。
    * 点击 "Save" 保存。
-   * **此步骤是必需的**，以便 Actions 能够执行"保持仓库活跃"（空提交）和"清理旧的工作流记录"等操作。
+   * **此步骤是必需的**，以便 `heartbeat` 分支的空提交工作流能够 push（该工作流已在自身 `permissions` 中声明 `contents: write`）。
 3. 启用后，你会看到命名为 `Quark签到` (or `Quark Sign-in`) 的工作流已配置完成。
 4. 脚本将按预设时间（北京时间每日约 9:00 和 13:00）自动运行。
    * **运行时间说明**：默认设置在北京时间上午 9 点和下午 1 点左右运行。由于 GitHub Actions 的计划任务调度机制，实际运行时间可能会有几分钟到几十分钟的延迟，这是正常现象。随机延迟的加入些也会影响确切的启动时间。
@@ -124,7 +123,7 @@ kps=ccc; sign=ddd; vcode=222;
 
 2. **GitHub Actions 未生效或报错 `Permission denied` / `GH006`**：
    * 确保已按照【3️⃣ 启用 GitHub Actions 及设置权限】中的步骤启用了 Actions。
-   * **最常见原因：**确保在仓库的 "Settings → Actions → General" 中，"Workflow permissions" 已设置为 **"读取和写入权限"**。如果权限不足，空提交和清理记录步骤会失败。
+   * **最常见原因：**确保在仓库的 "Settings → Actions → General" 中，"Workflow permissions" 已设置为 **"读取和写入权限"**。如果权限不足，空提交步骤会失败。
    * 检查 Actions 运行日志，查看具体的错误信息。
 
 3. **Workflow 显示跳过 (Skipped)**：
@@ -147,7 +146,7 @@ kps=ccc; sign=ddd; vcode=222;
 
 ## 📝 免责声明
 
-本项目为开源项目，作者不对任何因使用本项目产生的後果责任。
+本项目为开源项目，作者不对任何因使用本项目产生的后果责任。
 
 ---
 
@@ -179,7 +178,7 @@ kps=ccc; sign=ddd; vcode=222;
 3. **WPush 推送偶发失败（Network unreachable）**：
    - 原版本使用 `max_retries=3` 默认重试策略，不覆盖 `NewConnectionError`（网络不可达）
    - 修复版本改用 `urllib3.util.retry.Retry` 显式配置重试策略
-   - 支持连接级错误重试 + 指数退避（0.5s → 1s → 2s），减少偶发网络抖动导致的推送失败
+   - 支持连接级错误重试 + 指数退避（1s → 2s → 4s），减少偶发网络抖动导致的推送失败
    - `urllib3` 是 `requests` 内置依赖，无需额外安装
 
 ### 示例对比
