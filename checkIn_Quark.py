@@ -244,13 +244,13 @@ class Quark:
                 return {}
             return data
         except requests.exceptions.HTTPError as e:
-            print(f"{self.user_name} HTTP错误: {str(e)} | 状态码: {resp.status_code if resp else '未知'}")
+            print(f"{self.user_name} HTTP错误: {_mask_credential(str(e))} | 状态码: {resp.status_code if resp else '未知'}")
             return {}
         except requests.exceptions.RequestException as e:
-            print(f"{self.user_name} 请求异常: {str(e)}")
+            print(f"{self.user_name} 请求异常: {_mask_credential(str(e))}")
             return {}
         except ValueError as e:
-            print(f"{self.user_name} 响应解析异常: {str(e)} | 响应内容: {resp.text[:100] if resp else '无'}")
+            print(f"{self.user_name} 响应解析异常: {_mask_credential(str(e))} | 响应内容: {resp.text[:100] if resp else '无'}")
             return {}
 
     def _api_params(self):
