@@ -66,18 +66,25 @@ def send_wpush(title, content):
             headers={"Content-Type": "application/json", "User-Agent": "QuarkSign/1.0"},
             timeout=15
         )
-        # 清理响应中的非JSON前缀字符（如BOM、$等）
+        # 清理响应中的非JSON前缀字符（BOM、控制字符、$ 等），再解析
         text = resp.text
         json_start = text.find('{')
-        if json_start > 0:
+        if json_start >= 0:
             text = text[json_start:]
+        else:
+            # 无 JSON 主体：部分网关会在成功时返回纯文本/空响应，降级为警告而非错误
+            if resp.status_code == 200:
+                print(f"⚠️  WPush响应非JSON格式（HTTP {resp.status_code}），推送可能已成功")
+            else:
+                print(f"⚠️  WPush响应非JSON格式（HTTP {resp.status_code}）")
+            return
         result = json.loads(text)
         if result.get("code") == 0:
             print("✅ WPush推送成功")
         else:
             print(f"❌ WPush推送失败: {result.get('msg', '未知错误')} | 响应码: {result.get('code')}")
     except json.JSONDecodeError:
-        print(f"❌ WPush推送响应非JSON格式: {resp.text[:100]}...")
+        print(f"⚠️  WPush响应非JSON格式（HTTP {resp.status_code}），推送可能已成功")
     except requests.exceptions.Timeout:
         print("❌ WPush推送超时，请检查网络")
     except Exception as e:
@@ -273,18 +280,6 @@ class Quark:
         url = "https://drive-m.quark.cn/1/clouddrive/capacity/growth/sign"
         return self._request("post", url, params=self._api_params(), json_body={"sign_cyclic": True})
 
-    def query_balance(self):
-        """查询抽奖余额"""
-        url = "https://coral2.quark.cn/currency/v1/query_balance"
-        params = {
-            "moduleCode": "1f3563d38896438db994f118d4ff53cb",
-            "kps": self.param.get("kps")
-        }
-        result = self._request("get", url, params=params)
-        if not result:
-            return "查询失败"
-        return result.get("balance", "0")
-
     def do_sign(self):
         """执行完整签到流程（全链路类型校验）"""
         log = [f"\n📱 {self.user_name}"]
@@ -310,9 +305,6 @@ class Quark:
             daily_reward = self.convert_bytes(cap_sign.get("sign_daily_reward", 0))
             progress = f"{cap_sign.get('sign_progress', 0)}/{cap_sign.get('sign_target', 0)}"
             log.append(f"✅ 接口验证今日已签到 | 获得: {daily_reward} | 连签进度: {progress}")
-            # 查询抽奖余额
-            balance = self.query_balance()
-            log.append(f"🎁 抽奖余额: {balance}")
             return "\n".join(log), True
         else:
             sign_result = self.get_growth_sign()
@@ -328,9 +320,6 @@ class Quark:
                     updated_sign_reward = self.convert_bytes(updated_cap_composition.get("sign_reward", 0))
                     # 替换第二行中的总容量和签到累计为最新值（不新增行）
                     log[1] = f"🔍 {is_88vip} | 总容量: {updated_total_cap} | 签到累计: {updated_sign_reward}"
-                # 查询抽奖余额
-                balance = self.query_balance()
-                log.append(f"🎁 抽奖余额: {balance}")
                 return "\n".join(log), True
             else:
                 log.append(f"❌ 签到失败 | 原因: 接口返回异常（请检查Cookie有效性/重新抓包）")
