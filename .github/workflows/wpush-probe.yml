@@ -1,0 +1,21 @@
+name: WPush接口探测
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 运行探测脚本
+        env:
+          WPUSH_KEY: ${{ secrets.WPUSH_KEY }}
+        run: python wpush_probe.py
