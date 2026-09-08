@@ -53,6 +53,26 @@ def _mask_secret(text, secret=None):
     )
 
 
+# WPush 服务端无法处理非 BMP（4 字节）字符，实测会返回 {"code":500,"message":"服务异常"}
+_NON_BMP_RE = re.compile(r'[\U00010000-\U0010FFFF]')
+
+
+def _sanitize_for_wpush(text):
+    """移除 WPush 不支持的 4 字节（非 BMP）字符，如 📊 📱 🔍 等 emoji。
+
+    实测（2026-09）：/api/v1/send 内容含非 BMP 字符时必返回 code=500「服务异常」；
+    中文、换行、| 、Markdown 及 ✅ ❌ ⚠️ 等 BMP（3 字节）字符均正常。
+    """
+    if not text:
+        return text
+    cleaned = _NON_BMP_RE.sub('', text)
+    if cleaned == text:
+        return text
+    # 清理移除 emoji 后残留的多余空格
+    cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned)
+    return "\n".join(line.strip() for line in cleaned.split("\n"))
+
+
 def _mask_credential(text):
     """对包含 kps/sign/vcode 的凭据片段做脱敏，避免日志泄漏明文"""
     return re.sub(r'(kps|sign|vcode)=[^&;\s]+', r'\1=***', text, flags=re.IGNORECASE)
@@ -70,10 +90,15 @@ def send_wpush(title, content):
         content = content[:max_content_len] + "\n\n【内容过长，已截断】"
 
     url = "https://api.wpush.cn/api/v1/send"
+    # 必须剥离非 BMP 字符，否则服务端返回 500「服务异常」
+    safe_title = _sanitize_for_wpush(title)[:255]
+    safe_content = _sanitize_for_wpush(content)
+    if safe_content != content or safe_title != title[:255]:
+        print("ℹ️  已移除推送内容中不兼容的 4 字节 emoji（WPush 服务端不支持）")
     payload = {
         "apikey": wpush_key,
-        "title": title[:255],
-        "content": content,
+        "title": safe_title,
+        "content": safe_content,
     }
 
     try:
