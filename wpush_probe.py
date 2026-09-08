@@ -1,5 +1,5 @@
-"""临时探测脚本：用真实 API Key 对比多种参数组合，定位 WPush 500「服务异常」的触发条件。
-仅用于排查，定位后会删除。
+"""探测第二轮：定位 WPush 500「服务异常」的确切触发字符。
+假设：非 BMP（4 字节）emoji 触发服务端异常，BMP（3 字节）emoji 正常。
 """
 import os
 import urllib.parse
@@ -26,36 +26,33 @@ def send(name, data):
     try:
         with urllib.request.urlopen(req, timeout=25) as r:
             raw = r.read().decode("utf-8", "replace")
-            print(f"[{name}]  HTTP {r.status} -> {mask(raw)[:300]}")
+            print(f"[{name}]  HTTP {r.status} -> {mask(raw)[:200]}")
     except urllib.error.HTTPError as e:
         raw = e.read().decode("utf-8", "replace")
-        print(f"[{name}]  HTTP {e.code} -> {mask(raw)[:300]}")
+        print(f"[{name}]  HTTP {e.code} -> {mask(raw)[:200]}")
     except Exception as e:
         print(f"[{name}]  异常 {e}")
 
 
 if not KEY:
-    print("未配置 WPUSH_KEY，无法探测")
+    print("未配置 WPUSH_KEY")
     raise SystemExit(1)
 
-print(f"API Key 前缀: {KEY[:6]}... 长度: {len(KEY)}")
-print(f"Key 是否以 WPUSH_ 开头: {KEY.startswith('WPUSH_')}")
 print("=" * 60)
 
-realistic = (
-    "夸克网盘签到结果汇总（2026-09-09 08:00:00 北京时间）:\n"
-    "\u0001 检测到有效账号数: 2\n\n"
-    "第1个账号\n"
-    "\U0001f50d 普通用户 | 总容量: 1.50 TB | 签到累计: 20.00 GB\n"
-    "✅ 签到成功 | 获得: 200.00 MB | 连签进度: 5/7"
-)
+# --- BMP（3字节）emoji：预期应正常 ---
+send("A-BMP emoji ✅ U+2705", {"apikey": KEY, "title": "probeA", "content": "签到 ✅ 成功"})
+send("B-BMP emoji ❌ U+274C", {"apikey": KEY, "title": "probeB", "content": "失败 ❌ 了"})
 
-send("1-仅标题(无content)", {"apikey": KEY, "title": "probe1-minimal"})
-send("2-ASCII短内容", {"apikey": KEY, "title": "probe2", "content": "hello world"})
-send("3-真实内容(中文/emoji/多行)", {"apikey": KEY, "title": "probe3", "content": realistic})
-send("4-显式channel=wechat", {"apikey": KEY, "title": "probe4", "content": "hello", "channel": "wechat"})
-send("5-长内容2000字", {"apikey": KEY, "title": "probe5", "content": "测" * 2000})
-send("6-带url参数", {"apikey": KEY, "title": "probe6", "content": "hello", "url": "https://example.com"})
+# --- 非 BMP（4字节）emoji：预期触发 500 ---
+send("C-非BMP 🔍 U+1F50D", {"apikey": KEY, "title": "probeC", "content": "查询 🔍 中"})
+send("D-非BMP 📊 U+1F4CA", {"apikey": KEY, "title": "probeD", "content": "统计 📊 数据"})
+send("E-非BMP 📱 U+1F4F1", {"apikey": KEY, "title": "probeE", "content": "手机 📱 端"})
+
+# --- 其他可能因素 ---
+send("F-仅换行", {"apikey": KEY, "title": "probeF", "content": "第一行\n第二行"})
+send("G-竖线", {"apikey": KEY, "title": "probeG", "content": "a | b | c"})
+send("H-Markdown星号", {"apikey": KEY, "title": "probeH", "content": "**粗体** 内容"})
 
 print("=" * 60)
 print("探测结束")
