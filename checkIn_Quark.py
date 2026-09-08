@@ -36,6 +36,23 @@ _http.headers.update({
     "Accept-Encoding": "gzip, deflate, br",
 })
 
+# 推送专用 Session：推送是非幂等操作，禁用重试，避免服务端 5xx 时被自动重发造成重复推送
+_no_retry_http = requests.Session()
+_no_retry_http.headers.update({"User-Agent": "QuarkSign/1.0"})
+
+
+def _mask_secret(text, secret=None):
+    """脱敏日志中的密钥：优先替换真实值，再兜底按字段名匹配"""
+    if not text:
+        return ""
+    if secret and secret in text:
+        text = text.replace(secret, "***")
+    return re.sub(
+        r'(apikey|api_key|token|key)["\']?\s*[:=]\s*["\']?[^&,\s"\'}]+',
+        r'\1=***', text, flags=re.IGNORECASE
+    )
+
+
 def _mask_credential(text):
     """对包含 kps/sign/vcode 的凭据片段做脱敏，避免日志泄漏明文"""
     return re.sub(r'(kps|sign|vcode)=[^&;\s]+', r'\1=***', text, flags=re.IGNORECASE)
@@ -55,36 +72,35 @@ def send_wpush(title, content):
     url = "https://api.wpush.cn/api/v1/send"
     payload = {
         "apikey": wpush_key,
-        "title": title[:50],
-        "content": content
+        "title": title[:255],
+        "content": content,
     }
 
     try:
-        resp = _http.post(
-            url,
-            json=payload,
-            headers={"Content-Type": "application/json", "User-Agent": "QuarkSign/1.0"},
-            timeout=15
-        )
-        # 清理响应中的非JSON前缀字符（BOM、控制字符、$ 等），再解析
-        text = resp.text
+        # 官方接口为表单编码（application/x-www-form-urlencoded），见 https://wpush.cn/docs
+        # 推送非幂等，使用无重试 Session
+        resp = _no_retry_http.post(url, data=payload, timeout=15)
+        text = resp.text or ""
         json_start = text.find('{')
-        if json_start >= 0:
-            text = text[json_start:]
-        else:
-            # 无 JSON 主体：部分网关会在成功时返回纯文本/空响应，降级为警告而非错误
-            if resp.status_code == 200:
-                print(f"⚠️  WPush响应非JSON格式（HTTP {resp.status_code}），推送可能已成功")
-            else:
-                print(f"⚠️  WPush响应非JSON格式（HTTP {resp.status_code}）")
+        if json_start < 0:
+            print(f"⚠️  WPush响应非JSON格式（HTTP {resp.status_code}），推送结果未知")
+            print(f"   响应内容: {_mask_secret(text[:200], wpush_key)}")
             return
-        result = json.loads(text)
-        if result.get("code") == 0:
+
+        result = json.loads(text[json_start:])
+        code = result.get("code")
+        if code == 0:
             print("✅ WPush推送成功")
-        else:
-            print(f"❌ WPush推送失败: {result.get('msg', '未知错误')} | 响应码: {result.get('code')}")
+            return
+
+        # 官方响应字段为 message（旧版为 msg），两者兼容，避免再出现“未知错误”
+        msg = result.get("message") or result.get("msg") or "未知错误"
+        print(f"❌ WPush推送失败: {_mask_secret(msg, wpush_key)} | 业务码: {code} | HTTP: {resp.status_code}")
+        print(f"   完整响应: {_mask_secret(text[:300], wpush_key)}")
+        if code == 401:
+            print("   💡 API Key 无效或已重置，请到 wpush.cn 设置页核对并更新 WPUSH_KEY")
     except json.JSONDecodeError:
-        print(f"⚠️  WPush响应非JSON格式（HTTP {resp.status_code}），推送可能已成功")
+        print(f"⚠️  WPush响应JSON解析失败（HTTP {resp.status_code}）: {_mask_secret(text[:200], wpush_key)}")
     except requests.exceptions.Timeout:
         print("❌ WPush推送超时，请检查网络")
     except Exception as e:
