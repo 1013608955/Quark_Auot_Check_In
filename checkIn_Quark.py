@@ -3,6 +3,7 @@ import re
 import sys
 import json
 import requests
+import unicodedata
 from urllib.parse import urlparse, parse_qs, unquote
 from urllib3.util.retry import Retry
 from datetime import datetime
@@ -131,6 +132,25 @@ def send_wpush(title, content):
     except Exception as e:
         print(f"❌ WPush推送异常: {str(e)}")
         
+# 账号序号：① ② ③ …（BMP 字符，WPush 可正常接收）
+_CIRCLED_NUM = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+
+
+def _acct_label(idx):
+    """账号序号标签，超出范围则退回 [n]"""
+    return _CIRCLED_NUM[idx - 1] if 1 <= idx <= len(_CIRCLED_NUM) else f"[{idx}]"
+
+
+def _display_width(s):
+    """按显示宽度计算（东亚宽字符/全角算 2）"""
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+
+
+def _pad(text, width):
+    """按显示宽度右填充空格，用于字段对齐"""
+    return text + " " * max(0, width - _display_width(text))
+
+
 def parse_cookie_string(cookie_str):
     """将 cookie 字符串解析为 dict，支持 URL 格式和 kps=;sign=;vcode= 格式"""
     cookie_str = cookie_str.strip()
@@ -323,48 +343,57 @@ class Quark:
 
     def do_sign(self):
         """执行完整签到流程（全链路类型校验）"""
-        log = [f"\n📱 {self.user_name}"]
-        
         growth_info = self.get_growth_info()
         # 空字典直接判定为失败
         if not growth_info:
-            log.append("❌ 获取签到基础信息失败（Cookie可能已失效/参数错误/接口返回异常）")
+            log = [
+                f"\n{_acct_label(self.user_index)} {self.user_name}",
+                "   ✗ 获取签到基础信息失败",
+                "     请检查 Cookie 是否失效 / 参数是否正确",
+            ]
             return "\n".join(log), False
-        
-        # 所有get调用前先确保是字典
-        total_cap = self.convert_bytes(growth_info.get("total_capacity", 0))
-        cap_composition = self._as_dict(growth_info.get("cap_composition"))
-        sign_reward = cap_composition.get("sign_reward", 0)
-        sign_reward_str = self.convert_bytes(sign_reward)
+
         is_88vip = "88VIP用户" if growth_info.get("88VIP") else "普通用户"
-        
-        log.append(f"🔍 {is_88vip} | 总容量: {total_cap} | 签到累计: {sign_reward_str}")
-        
+        cap_composition = self._as_dict(growth_info.get("cap_composition"))
         cap_sign = self._as_dict(growth_info.get("cap_sign"))
 
+        total_cap = self.convert_bytes(growth_info.get("total_capacity", 0))
+        sign_reward_str = self.convert_bytes(cap_composition.get("sign_reward", 0))
+
         if cap_sign.get("sign_daily"):
+            # 接口确认今日已签到，无需重复签到
             daily_reward = self.convert_bytes(cap_sign.get("sign_daily_reward", 0))
-            progress = f"{cap_sign.get('sign_progress', 0)}/{cap_sign.get('sign_target', 0)}"
-            log.append(f"✅ 接口验证今日已签到 | 获得: {daily_reward} | 连签进度: {progress}")
-            return "\n".join(log), True
+            progress = f"{cap_sign.get('sign_progress', 0)} / {cap_sign.get('sign_target', 0)}"
+            status = "✓ 今日已签到（无需重复操作）"
         else:
             sign_result = self.get_growth_sign()
-            if sign_result:
-                reward = self.convert_bytes(sign_result.get("sign_daily_reward", 0))
-                progress = f"{cap_sign.get('sign_progress', 0)+1}/{cap_sign.get('sign_target', 0)}"
-                log.append(f"✅ 签到成功 | 获得: {reward} | 连签进度: {progress}")
-                # 修复：重新获取最新的容量信息，确保显示签到后的当前值
-                updated_info = self.get_growth_info()
-                if updated_info:
-                    updated_total_cap = self.convert_bytes(updated_info.get("total_capacity", 0))
-                    updated_cap_composition = self._as_dict(updated_info.get("cap_composition"))
-                    updated_sign_reward = self.convert_bytes(updated_cap_composition.get("sign_reward", 0))
-                    # 替换第二行中的总容量和签到累计为最新值（不新增行）
-                    log[1] = f"🔍 {is_88vip} | 总容量: {updated_total_cap} | 签到累计: {updated_sign_reward}"
-                return "\n".join(log), True
-            else:
-                log.append(f"❌ 签到失败 | 原因: 接口返回异常（请检查Cookie有效性/重新抓包）")
+            if not sign_result:
+                log = [
+                    f"\n{_acct_label(self.user_index)} {self.user_name}",
+                    "   ✗ 签到失败",
+                    "     接口返回异常，请检查 Cookie 有效性或重新抓包",
+                ]
                 return "\n".join(log), False
+
+            daily_reward = self.convert_bytes(sign_result.get("sign_daily_reward", 0))
+            progress = f"{cap_sign.get('sign_progress', 0) + 1} / {cap_sign.get('sign_target', 0)}"
+            status = "✓ 签到成功"
+            # 重新拉取最新容量，展示签到后的当前值
+            updated_info = self.get_growth_info()
+            if updated_info:
+                total_cap = self.convert_bytes(updated_info.get("total_capacity", 0))
+                updated_composition = self._as_dict(updated_info.get("cap_composition"))
+                sign_reward_str = self.convert_bytes(updated_composition.get("sign_reward", 0))
+
+        log = [
+            f"\n{_acct_label(self.user_index)} {self.user_name} · {is_88vip}",
+            f"   {_pad('总容量', 8)} {total_cap}",
+            f"   {_pad('签到累计', 8)} {sign_reward_str}",
+            f"   {_pad('今日获得', 8)} {daily_reward}",
+            f"   {_pad('连签进度', 8)} {progress}",
+            f"   {status}",
+        ]
+        return "\n".join(log), True
 
 def write_success_date():
     """写入成功签到的日期（北京时间）"""
@@ -389,30 +418,45 @@ def main():
     print(f"执行时间: {time_str} (北京时间)")
     print("="*50)
 
-    final_msg = [f"夸克网盘签到结果汇总（{time_str} 北京时间）:"]
+    results = []
     overall_success = True
-    
+
     cookie_list = get_env()
-    final_msg.append(f"📊 检测到有效账号数: {len(cookie_list)}")
-    
+
     for idx, cookie_str in enumerate(cookie_list, 1):
         print(f"\n{'='*30} 处理第{idx}个账号 {'='*30}")
         try:
             quark = Quark(cookie_str, idx)
             sign_log, sign_success = quark.do_sign()
-            final_msg.append(sign_log)
+            results.append((sign_log, sign_success))
             print(sign_log)
-            
+
             if not sign_success:
                 overall_success = False
         except Exception as e:
-            err_log = f"\n📱 第{idx}个账号 | ❌ 处理失败: {str(e)}"
-            final_msg.append(err_log)
+            err_log = (
+                f"\n{_acct_label(idx)} 第{idx}个账号\n"
+                f"   ✗ 处理失败: {str(e)}"
+            )
+            results.append((err_log, False))
             print(err_log)
             overall_success = False
         print(f"{'='*70}")
-    
+
+    success_cnt = sum(1 for _, ok in results if ok)
+    fail_cnt = len(results) - success_cnt
+
+    # 汇总头部：状态 + 时间 + 账号统计
+    title = "✅ 夸克网盘自动签到 · 全部成功" if overall_success else "⚠️  夸克网盘自动签到 · 有账号失败"
+    final_msg = [
+        title,
+        "─" * 24,
+        f"时间  {time_str}（北京时间）",
+        f"账号  {len(cookie_list)} 个 · 成功 {success_cnt} · 失败 {fail_cnt}",
+    ]
+    final_msg.extend(log for log, _ in results)
     final_content = "\n".join(final_msg)
+
     send_wpush(
         "夸克网盘自动签到" + ("（部分账号失败）" if not overall_success else ""),
         final_content
